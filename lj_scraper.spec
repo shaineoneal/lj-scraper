@@ -5,7 +5,7 @@ a = Analysis(
     ['lj_scraper.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('.venv/Lib/site-packages/playwright/driver', 'playwright/driver')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
