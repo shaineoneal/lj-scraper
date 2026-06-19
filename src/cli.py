@@ -8,7 +8,7 @@ from playwright.async_api import async_playwright
 from rich.panel import Panel
 
 from .config import console, DEFAULT_USER_DATA_DIR
-from .browser import run_login_flow
+from .browser import run_login_flow, launch_browser_with_fallback
 from .account_scraper import LiveJournalAccount
 from .photo_scraper import LiveJournalPhotoScraper
 from .utils import parse_targets, print_summary_table
@@ -20,6 +20,9 @@ async def main_async():
     parser.add_argument("--login", action="store_true", help="Launch browser to log in and save session credentials.")
     parser.add_argument("--headed", action="store_true", help="Run browser in headed mode (visible window).")
     parser.add_argument("--delay", type=float, default=0.0, help="Time in seconds to wait before page actions or downloads (default: 0.0)")
+    parser.add_argument("--username", help="LiveJournal username for headless login.")
+    parser.add_argument("--password", help="LiveJournal password for headless login.")
+    parser.add_argument("--install-deps", action="store_true", help="Install missing Linux system dependencies for Playwright.")
     
     # Selective profile scraping flags
     parser.add_argument("--entries", action="store_true", help="Scrape recent entries")
@@ -32,12 +35,42 @@ async def main_async():
 
     args = parser.parse_args()
 
+    if args.install_deps:
+        console.print("[bold blue]Installing missing Linux system dependencies for Playwright...[/bold blue]")
+        import sys
+        import playwright.__main__
+        old_argv = sys.argv
+        sys.argv = ["playwright", "install-deps"]
+        try:
+            playwright.__main__.main()
+        except SystemExit as e:
+            if e.code != 0:
+                console.print(f"[bold red]Failed to install dependencies (exit code {e.code}).[/bold red]")
+                sys.exit(e.code)
+        finally:
+            sys.argv = old_argv
+        console.print("[bold green]System dependencies installation complete![/bold green]")
+        return
+
     # Determine user data directory
     user_data_dir = args.user_data_dir or os.environ.get("USER_DATA_DIR", DEFAULT_USER_DATA_DIR)
     os.environ["USER_DATA_DIR"] = user_data_dir
 
     if args.login:
-        await run_login_flow(user_data_dir)
+        username = args.username
+        password = args.password
+        
+        # If no display is available (headless environment) and no credentials provided, prompt the user
+        is_headless_env = os.name != 'nt' and not os.environ.get("DISPLAY")
+        if is_headless_env and (not username or not password):
+            console.print("[yellow]Headless environment detected. Please enter your LiveJournal credentials to log in programmatically.[/yellow]")
+            import getpass
+            if not username:
+                username = input("Username: ").strip()
+            if not password:
+                password = getpass.getpass("Password: ")
+                
+        await run_login_flow(user_data_dir, username, password)
         return
 
     if not args.target:
@@ -72,7 +105,8 @@ async def main_async():
 
     async with async_playwright() as p:
         console.print(f"[bold blue]Launching browser context from session directory: {Path(user_data_dir).resolve()}[/bold blue]")
-        context = await p.chromium.launch_persistent_context(
+        context = await launch_browser_with_fallback(
+            p,
             user_data_dir=user_data_dir,
             headless=headless,
             args=["--no-sandbox", "--disable-dev-shm-usage"]
