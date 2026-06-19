@@ -35,3 +35,5 @@ desktop.ini
 
 # Tool-specific directories
 .junie/
+ms-playwright/
+

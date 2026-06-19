@@ -1,11 +1,23 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
+import importlib.util
 
+# Dynamically locate the playwright driver path in a cross-platform manner
+playwright_spec = importlib.util.find_spec('playwright')
+if playwright_spec and playwright_spec.submodule_search_locations:
+    driver_dir = os.path.join(playwright_spec.submodule_search_locations[0], 'driver')
+else:
+    # Fallback if package lookup fails
+    driver_dir = os.path.join('.venv', 'Lib' if os.name == 'nt' else 'lib', 'site-packages', 'playwright', 'driver')
 
 a = Analysis(
     ['lj_scraper.py'],
     pathex=[],
     binaries=[],
-    datas=[('.venv/Lib/site-packages/playwright/driver', 'playwright/driver')],
+    datas=[
+        (driver_dir, 'playwright/driver'),
+        ('ms-playwright', 'ms-playwright')
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

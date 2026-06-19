@@ -40,6 +40,12 @@ jobs:
           python -m pip install pyinstaller
           python -m pip install .
 
+      - name: Install Playwright Browsers Locally
+        run: |
+          python -m playwright install chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ms-playwright
+
       - name: Compile with PyInstaller
         run: |
           pyinstaller lj_scraper.spec
