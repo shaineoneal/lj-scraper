@@ -1,1 +1,38 @@
-/lj_scrapers.egg-info/
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Build and distribution directories
+build/
+dist/
+*.egg-info/
+.eggs/
+*.spec
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local configuration / secrets
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Tool-specific directories
+.junie/
