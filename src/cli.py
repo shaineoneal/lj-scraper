@@ -72,7 +72,11 @@ async def main_async():
 
     async with async_playwright() as p:
         console.print(f"[bold blue]Launching browser context from session directory: {Path(user_data_dir).resolve()}[/bold blue]")
-        context = await p.chromium.launch_persistent_context(user_data_dir=user_data_dir, headless=headless)
+        context = await p.chromium.launch_persistent_context(
+            user_data_dir=user_data_dir,
+            headless=headless,
+            args=["--no-sandbox", "--disable-dev-shm-usage"]
+        )
         
         try:
             # 1. Process profile scraping targets

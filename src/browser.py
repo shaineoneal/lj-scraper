@@ -17,7 +17,11 @@ async def run_login_flow(user_data_dir: str):
         ))
 
         # Launch persistent context
-        context = await p.chromium.launch_persistent_context(user_data_dir, headless=False)
+        context = await p.chromium.launch_persistent_context(
+            user_data_dir,
+            headless=False,
+            args=["--no-sandbox", "--disable-dev-shm-usage"]
+        )
         page = context.pages[0] if context.pages else await context.new_page()
         await page.goto("https://www.livejournal.com/")
 
