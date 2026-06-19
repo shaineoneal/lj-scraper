@@ -2,6 +2,7 @@ name: Build Executables
 
 on:
   push:
+    branches: [ main ]
     tags:
       - 'v*.*.*'
       - 'v*.*'
@@ -19,10 +20,10 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact_name: lj-scraper-linux
-            binary_path: dist/lj_scraper
+            binary_name: lj-scraper-linux
           - os: windows-latest
             artifact_name: lj-scraper-windows
-            binary_path: dist/lj_scraper.exe
+            binary_name: lj-scraper-windows.exe
 
     steps:
       - name: Checkout repository
@@ -44,11 +45,20 @@ jobs:
         run: |
           pyinstaller lj_scraper.spec
 
+      - name: Rename compiled binary
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            mv dist/lj_scraper.exe dist/${{ matrix.binary_name }}
+          else
+            mv dist/lj_scraper dist/${{ matrix.binary_name }}
+          fi
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.binary_path }}
+          path: dist/${{ matrix.binary_name }}
           if-no-files-found: error
 
   release:
@@ -63,20 +73,20 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: lj-scraper-linux
-          path: ./dist-release/linux
+          path: ./dist-release
 
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
           name: lj-scraper-windows
-          path: ./dist-release/windows
+          path: ./dist-release
 
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ./dist-release/linux/lj_scraper
-            ./dist-release/windows/lj_scraper.exe
+            ./dist-release/lj-scraper-linux
+            ./dist-release/lj-scraper-windows.exe
           draft: false
           prerelease: false
         env:
