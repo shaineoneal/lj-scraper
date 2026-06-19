@@ -27,13 +27,14 @@ class LiveJournalPhotoScraper:
 
         # Parse url parts for directory and PDF naming
         parts = url.split(r"album/")
-        album_user = url.split("//")[1].split(".")[0].replace("-", "_")
+        username = url.split("//")[1].split(".")[0]
+        album_user = username.replace("-", "_")
         album_id = parts[1].split("/")[0] if len(parts) > 1 else "unknown"
 
         if output_dir:
             dir_path = Path(output_dir)
         else:
-            dir_path = Path(f"{album_user}-album{album_id}")
+            dir_path = Path(username) / "photos" / f"album_{album_id}"
 
         # Create a new page for scraping this album
         page = await self.context.new_page()
@@ -163,13 +164,14 @@ class LiveJournalPhotoScraper:
     async def _download_images(self, page: Page, url: str, metadata: dict, output_dir: Path = None) -> dict:
         """Extracts src attributes and downloads images with a progress bar."""
         parts = url.split(r"album/")
-        album_user = url.split("//")[1].split(".")[0].replace("-", "_")
+        username = url.split("//")[1].split(".")[0]
+        album_user = username.replace("-", "_")
         album_id = parts[1].split("/")[0] if len(parts) > 1 else "unknown"
 
         if output_dir:
             dir_path = output_dir
         else:
-            dir_path = Path(f"{album_user}-album{album_id}")
+            dir_path = Path(username) / "photos" / f"album_{album_id}"
 
         dir_path.mkdir(parents=True, exist_ok=True)
         containers = await page.query_selector_all(SEL_CONTAINER)
