@@ -3,6 +3,9 @@ name: Build Executables
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*.*.*'
+      - 'v*.*'
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -48,3 +51,34 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.binary_path }}
           if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lj-scraper-linux
+          path: ./dist-release/linux
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lj-scraper-windows
+          path: ./dist-release/windows
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ./dist-release/linux/lj_scraper
+            ./dist-release/windows/lj_scraper.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
