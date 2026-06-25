@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from playwright.async_api import Page, Error as PlaywrightError
 from rich.spinner import Spinner
@@ -77,12 +76,14 @@ class LiveJournalAccount:
                     raise Exception(f"HTTP Status {resp.status}", resp.status)
 
                 return page
-            except (PlaywrightError, TimeoutError, Exception) as e:
+
+            except TimeoutError as e:
                 if 'page' in locals() and page:
                     await page.close()
                 attempt += 1
                 if attempt >= max_attempts:
                     raise e
+        return None
 
     async def _scrape_task(self, task_name: str, label: str, check_fn=None, save_fn=None) -> dict:
         """Generic task runner that standardizes the fetch/check/save lifecycle."""
