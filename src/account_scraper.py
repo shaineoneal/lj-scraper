@@ -1,3 +1,5 @@
+import os
+from os import mkdir
 from pathlib import Path
 from playwright.async_api import Page, Error as PlaywrightError
 from rich.spinner import Spinner
@@ -22,7 +24,7 @@ class LiveJournalAccount:
         self.username = username
         self.options = options
         self.delay = delay
-        self.user_dir = Path(username)
+        self.user_dir = Path(f"output/{username}")
         self.is_retrying = False
 
         self.base_url = f"https://{username}.livejournal.com"
@@ -262,6 +264,8 @@ class LiveJournalAccount:
 
     async def process(self):
         """Executes all selected scraping tasks for the account."""
+        output = Path("output")
+        output.mkdir(exist_ok=True)
         self.user_dir.mkdir(exist_ok=True)
 
         if self.options.get("entries"):
