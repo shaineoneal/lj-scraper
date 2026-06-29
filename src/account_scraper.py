@@ -110,6 +110,25 @@ class LiveJournalAccount:
                     await page.close()
         return result
 
+    async def _save_page_assets(self, page, spinner, label, filename, res) -> None:
+        """Helper to download both HTML and PDF, compress the PDF, and update results."""
+        save_path = self.user_dir / filename
+
+        try:
+            spinner.update(text="[bold blue]Downloading HTML...[/bold blue]")
+            await download_html(page, f"{save_path}.html")
+            res["html"] = True
+
+            spinner.update(text="[bold blue]Downloading PDF...[/bold blue]")
+            if await download_pdf(page, f"{save_path}.pdf"):
+                res["pdf"] = True
+                spinner.update(text="[bold blue]Compressing PDF...[/bold blue]")
+                await compress_pdf(f"{save_path}.pdf")
+        except Exception as e:
+            console.print(f"    [bold red]✗[/bold red] [dim]Error saving assets for {label}:[/dim] {e}")
+            
+        console.print(f"    [bold green]✓[/bold green] [dim]Saved HTML & PDF:[/dim] {label}")
+
     async def scrape_entries(self) -> dict:
         async def save(page, spinner, res):
             title = await page.title()
@@ -117,33 +136,14 @@ class LiveJournalAccount:
             safe_title = safe_title or "entries"
             save_path = self.user_dir / safe_title
             
-            spinner.update(text="[bold blue]Downloading HTML...[/bold blue]")
-            await download_html(page, f"{save_path}.html")
-            res["html"] = True
-            
-            spinner.update(text="[bold blue]Downloading PDF...[/bold blue]")
-            if await download_pdf(page, f"{save_path}.pdf"):
-                res["pdf"] = True
-                spinner.update(text="[bold blue]Compressing PDF...[/bold blue]")
-                await compress_pdf(f"{save_path}.pdf")
-            console.print(f"    [bold green]✓[/bold green] [dim]Saved PDF & HTML:[/dim] {self.urls['entries']}")
+            await self._save_page_assets(page, spinner, self.urls['entries'], safe_title, res)
 
         return await self._scrape_task("entries", "recent entries", save_fn=save)
 
     async def scrape_profile(self) -> dict:
         async def save(page, spinner, res):
-            save_path = self.user_dir / f"{self.username} - Profile"
-            
-            spinner.update(text="[bold blue]Downloading HTML...[/bold blue]")
-            await download_html(page, f"{save_path}.html")
-            res["html"] = True
-            
-            spinner.update(text="[bold blue]Downloading PDF...[/bold blue]")
-            if await download_pdf(page, f"{save_path}.pdf"):
-                res["pdf"] = True
-                spinner.update(text="[bold blue]Compressing PDF...[/bold blue]")
-                await compress_pdf(f"{save_path}.pdf")
-            console.print(f"    [bold green]✓[/bold green] [dim]Saved PDF & HTML:[/dim] {self.urls['profile']}")
+            filename = f"{self.username} - Profile"
+            await self._save_page_assets(page, spinner, self.urls['profile'], filename, res)
             
             memory_count = await page.locator('.b-profile-stat-memcount > .b-profile-stat-value').all_inner_texts()
             res["mem_count"] = int(memory_count[0].replace(',', '')) if memory_count else 0
@@ -152,34 +152,22 @@ class LiveJournalAccount:
 
     async def scrape_tags(self) -> dict:
         async def save(page, spinner, res):
-            save_path = self.user_dir / f"{self.username} - Tags"
-            
-            spinner.update(text="[bold blue]Downloading PDF...[/bold blue]")
-            if await download_pdf(page, f"{save_path}.pdf"):
-                res["pdf"] = True
-            console.print(f"    [bold green]✓[/bold green] [dim]Saved PDF:[/dim] {self.urls['tags']}")
+            filename = f"{self.username} - Tags"
+            await self._save_page_assets(page, spinner, self.urls['tags'], filename, res)
 
         return await self._scrape_task("tags", "tags", check_fn=check_for_tags, save_fn=save)
 
     async def scrape_userpics(self) -> dict:
         async def save(page, spinner, res):
-            save_path = self.user_dir / f"{self.username} - Userpics"
-            
-            spinner.update(text="[bold blue]Downloading HTML...[/bold blue]")
-            await download_html(page, f"{save_path}.html")
-            res["html"] = True
-            console.print(f"    [bold green]✓[/bold green] [dim]Saved HTML:[/dim] {self.urls['userpics']}")
+            filename = f"{self.username} - Userpics"
+            await self._save_page_assets(page, spinner, self.urls['userpics'], filename, res)
 
         return await self._scrape_task("userpics", "userpics", check_fn=check_for_userpics, save_fn=save)
 
     async def scrape_vgifts(self) -> dict:
         async def save(page, spinner, res):
-            save_path = self.user_dir / f"{self.username} - Virtual Gifts"
-            
-            spinner.update(text="[bold blue]Downloading HTML...[/bold blue]")
-            await download_html(page, f"{save_path}.html")
-            res["html"] = True
-            console.print(f"    [bold green]✓[/bold green] [dim]Saved HTML:[/dim] {self.urls['vgifts']}")
+            filename = f"{self.username} - Virtual Gifts"
+            await self._save_page_assets(page, spinner, self.urls['vgifts'], filename, res)
 
         return await self._scrape_task("vgifts", "virtual gifts", check_fn=check_for_vgifts, save_fn=save)
 
@@ -190,16 +178,10 @@ class LiveJournalAccount:
             return True
 
         async def save(page, spinner, res):
-            save_path = self.user_dir / f"{self.username} - Memories"
+            filename = f"{self.username} - Memories"
             await scroll_with_keyboard(page, spinner, mem_count)
-            
-            spinner.update(text="[bold blue]Downloading PDF...[/bold blue]")
             await page.wait_for_timeout(5000)
-            if await download_pdf(page, f"{save_path}.pdf"):
-                res["pdf"] = True
-                spinner.update(text="[bold blue]Compressing PDF...[/bold blue]")
-                await compress_pdf(f"{save_path}.pdf")
-            console.print(f"    [bold green]✓[/bold green] [dim]Saved PDF:[/dim] {self.urls['memories']}")
+            await self._save_page_assets(page, spinner, self.urls['memories'], filename, res)
 
         return await self._scrape_task("memories", "memories", check_fn=check, save_fn=save)
 
@@ -208,15 +190,8 @@ class LiveJournalAccount:
             return True if page else False
 
         async def save(page, spinner, res):
-            save_path = self.user_dir / f"{self.username} - Photo Albums"
-            
-            spinner.update(text="[bold blue]Downloading Photos Page PDF...[/bold blue]")
-            if await download_pdf(page, f"{save_path}.pdf"):
-                res["pdf"] = True
-                spinner.update(text="[bold blue]Compressing PDF...[/bold blue]")
-                await compress_pdf(f"{save_path}.pdf")
-
-                console.print(f"    [bold green]✓[/bold green] [dim]Saved PDF:[/dim] {self.urls['photos']}")
+            filename = f"{self.username} - Photo Albums"
+            await self._save_page_assets(page, spinner, self.urls['photos'], filename, res)
 
             # Extract album links
             from .photo_scraper import LiveJournalPhotoScraper
