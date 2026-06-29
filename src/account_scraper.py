@@ -229,6 +229,8 @@ class LiveJournalAccount:
                     if ok:
                         success_count += 1
                 except Exception as e:
+                    if "AuthenticationError" in type(e).__name__:
+                        raise e
                     console.print(f"    [bold red]✗ Failed to download album {album_url}: {e}[/bold red]")
 
             res["success_count"] = success_count

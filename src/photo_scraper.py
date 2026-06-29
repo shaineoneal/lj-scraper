@@ -66,6 +66,8 @@ class LiveJournalPhotoScraper:
                         return True
                     return False
                 except (TimeoutError, Exception) as e:
+                    if "AuthenticationError" in type(e).__name__:
+                        raise e
                     console.log(f"[bold yellow]Attempt {attempt} failed for {url}: {e}[/bold yellow]")
                     if attempt == max_attempts:
                         console.log(f"[bold red]Max retry attempts reached for {url}. Skipping.[/bold red]")
@@ -266,6 +268,7 @@ class LiveJournalPhotoScraper:
                 return True
 
             except AuthenticationError as e:
+                console.log(f"[bold red]Authentication Error ({e})[/bold red]")
                 raise e
             except Exception as e:
                 if attempt < self.max_retries - 1:
