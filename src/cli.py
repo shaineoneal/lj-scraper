@@ -131,7 +131,7 @@ async def main_async():
                 console.print(f"\n[bold green]=== Starting profile scraping for {len(profile_targets)} account(s) ===[/bold green]")
                 for username in profile_targets:
                     console.print(f"\n[bold magenta]► Processing LJ account:[/bold magenta] {username}")
-                    lj_user = LiveJournalAccount(context, username, options, delay=args.delay)
+                    lj_user = LiveJournalAccount(context, username, options, delay=delay)
                     await lj_user.process()
                     all_results.append(lj_user)
 
