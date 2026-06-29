@@ -7,7 +7,7 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 from rich.panel import Panel
 
-from .config import console, DEFAULT_USER_DATA_DIR
+from .config import console, DEFAULT_USER_DATA_DIR, settings
 from .browser import run_login_flow, launch_browser_with_fallback
 from .account_scraper import LiveJournalAccount
 from .photo_scraper import LiveJournalPhotoScraper
@@ -58,20 +58,8 @@ async def main_async():
 
     login = args.login if args.login is not None else settings.get("login", False)
     if login:
-        username = args.username or settings.get("username")
-        password = args.password or settings.get("password")
-        
-        # If no display is available (headless environment) and no credentials provided, prompt the user
-        is_headless_env = os.name != 'nt' and not os.environ.get("DISPLAY")
-        if is_headless_env and (not username or not password):
-            console.print("[yellow]Headless environment detected. Please enter your LiveJournal credentials to log in programmatically.[/yellow]")
-            import getpass
-            if not username:
-                username = input("Username: ").strip()
-            if not password:
-                password = getpass.getpass("Password: ")
                 
-        await run_login_flow(user_data_dir, username, password)
+        await run_login_flow(user_data_dir)
         return
 
     target = args.target or settings.get("target")
@@ -106,7 +94,7 @@ async def main_async():
     
     # Resolve headless setting: CLI flags override config setting
     headed = None
-    if args.headed is not None or args.headless is not None:
+    if args.headed is not None:
         if args.headed:
             headed = True
         elif args.headless:
@@ -127,16 +115,6 @@ async def main_async():
 
      # Resolve delay setting: CLI flag overrides config setting
     delay = args.delay if args.delay is not None else settings.get("delay") if settings.get("delay") is not None else settings.get("default_delay", 0.0)
-
-    # Resolve all_posts setting
-    all_posts = args.all_posts if args.all_posts is not None else settings.get("all_posts", False)
-
-    # Resolve concurrency setting: CLI flag overrides config setting
-    concurrency = args.concurrency if args.concurrency is not None else settings.get("concurrency", 2)
-    concurrency = max(1, concurrency)
-
-    # Resolve timeout setting: CLI flag overrides config setting
-    timeout = args.timeout if args.timeout is not None else settings.get("timeout", 20.0)
 
     async with async_playwright() as p:
         console.print(f"[bold blue]Launching browser context from session directory: {Path(user_data_dir).resolve()}[/bold blue]")
