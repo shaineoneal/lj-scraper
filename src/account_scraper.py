@@ -23,7 +23,8 @@ class LiveJournalAccount:
         self.context = context
         self.username = username
         self.options = options
-        self.delay = delay
+        import random
+        self.jitter = random.uniform(0.5, 1.5) * delay
         self.user_dir = Path(f"output/{username}")
         self.is_retrying = False
 
@@ -52,11 +53,10 @@ class LiveJournalAccount:
     async def _fetch_page(self, url: str, max_attempts: int = 7, status_or_spinner: Spinner = None) -> Page | None:
         """Navigates to the given URL with retries and returns the active page object."""
         import asyncio
-        if self.delay > 0:
-            await asyncio.sleep(self.delay)
+        await asyncio.sleep(self.jitter)
             
         attempt = 0
-        timeout_ms = 45000 if self.is_retrying else 20000
+        timeout_ms = int(self.timeout * 2.25 * 1000) if self.is_retrying else int(self.timeout * 1000)
 
         while attempt < max_attempts:
             try:
