@@ -1,9 +1,53 @@
 import os
 import re
+import json
 from pathlib import Path
 from rich.console import Console
 
 console = Console()
+
+CONFIG_FILE = Path("scraper_config.json")
+
+DEFAULT_SETTINGS = {
+    "target": "",
+    "user_data_dir": "user_profile",
+    "login": False,
+    "headed": False,
+    "delay": None,
+    "entries": None,
+    "profile": None,
+    "tags": None,
+    "userpics": None,
+    "vgifts": None,
+    "memories": None,
+    "photos": None
+}
+
+def load_config() -> dict:
+    """Loads configuration from scraper_config.json in the current working directory.
+    If the file doesn't exist, it creates a default template.
+    """
+    if not CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(DEFAULT_SETTINGS, f, indent=4)
+        except Exception as e:
+            console.print(f"[bold yellow]Warning: Could not create default config file: {e}[/bold yellow]")
+        return DEFAULT_SETTINGS
+
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            user_config = json.load(f)
+            # Merge with defaults to ensure all keys are present
+            merged = DEFAULT_SETTINGS.copy()
+            merged.update(user_config)
+            return merged
+    except Exception as e:
+        console.print(f"[bold red]Warning: Failed to parse {CONFIG_FILE}, using defaults: {e}[/bold red]")
+        return DEFAULT_SETTINGS
+
+# Loaded settings dict
+settings = load_config()
 
 USER_DATA_ENV = "USER_DATA_DIR"
 DEFAULT_USER_DATA_DIR = "user_profile"

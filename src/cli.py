@@ -15,27 +15,27 @@ from .utils import parse_targets, print_summary_table
 
 async def main_async():
     parser = argparse.ArgumentParser(description="Scrape and download LiveJournal accounts and photo albums.")
-    parser.add_argument("target", nargs="?", help="A LiveJournal profile URL, username, photo album URL, or .txt file containing them.")
-    parser.add_argument("--user-data-dir", default=None, help=f"Directory for browser session data (default: read from USER_DATA_DIR env var or '{DEFAULT_USER_DATA_DIR}')")
-    parser.add_argument("--login", action="store_true", help="Launch browser to log in and save session credentials.")
-    parser.add_argument("--headed", action="store_true", help="Run browser in headed mode (visible window).")
-    parser.add_argument("--delay", type=float, default=0.0, help="Time in seconds to wait before page actions or downloads (default: 0.0)")
-    parser.add_argument("--username", help="LiveJournal username for headless login.")
-    parser.add_argument("--password", help="LiveJournal password for headless login.")
-    parser.add_argument("--install-deps", action="store_true", help="Install missing Linux system dependencies for Playwright.")
+    parser.add_argument("target", nargs="?", help="A LiveJournal profile URL, username, photo album URL, or .txt file containing them (config key: 'target').")
+    parser.add_argument("--user-data-dir", default=None, help=f"Directory for browser session data (config key: 'user_data_dir', default: read from config or USER_DATA_DIR env var or '{DEFAULT_USER_DATA_DIR}')")
+    parser.add_argument("--login", action="store_true", default=None, help="Launch browser to log in manually and save session credentials (config key: 'login').")
+    parser.add_argument("--headed", action="store_true", default=None, help="Run browser in headed mode with a visible window (config key: 'headed').")
+    parser.add_argument("--delay", type=float, default=None, help="Time in seconds to wait before page actions/downloads with a randomized +/- 50%% jitter (config key: 'delay', default: read from config or 0.0)")
+    parser.add_argument("--install-deps", action="store_true", default=None, help="Install missing Linux system dependencies for Playwright (config key: 'install_deps').")
     
-    # Selective profile scraping flags
-    parser.add_argument("--entries", action="store_true", help="Scrape recent entries")
-    parser.add_argument("--profile", action="store_true", help="Scrape user profile")
-    parser.add_argument("--tags", action="store_true", help="Scrape tags")
-    parser.add_argument("--userpics", action="store_true", help="Scrape userpics")
-    parser.add_argument("--vgifts", action="store_true", help="Scrape virtual gifts")
-    parser.add_argument("--memories", action="store_true", help="Scrape memories")
-    parser.add_argument("--photos", action="store_true", help="Scrape photos (downloads metadata and photo albums)")
+    # Selective account scraping flags
+    parser.add_argument("--entries", action="store_true", default=None, help="Scrape recent entries (config key: 'entries').")
+    parser.add_argument("--profile", action="store_true", default=None, help="Scrape user profile (config key: 'profile').")
+    parser.add_argument("--tags", action="store_true", default=None, help="Scrape tags (config key: 'tags').")
+    parser.add_argument("--userpics", action="store_true", default=None, help="Scrape userpics (config key: 'userpics').")
+    parser.add_argument("--vgifts", action="store_true", default=None, help="Scrape virtual gifts (config key: 'vgifts').")
+    parser.add_argument("--memories", action="store_true", default=None, help="Scrape memories (config key: 'memories').")
+    parser.add_argument("--photos", action="store_true", default=None, help="Scrape photos (downloads metadata and photo albums) (config key: 'photos').")
 
     args = parser.parse_args()
 
-    if args.install_deps:
+    # Resolve settings / args
+    install_deps = args.install_deps if args.install_deps is not None else settings.get("install_deps", False)
+    if install_deps:
         console.print("[bold blue]Installing missing Linux system dependencies for Playwright...[/bold blue]")
         import sys
         import playwright.__main__
@@ -53,12 +53,13 @@ async def main_async():
         return
 
     # Determine user data directory
-    user_data_dir = args.user_data_dir or os.environ.get("USER_DATA_DIR", DEFAULT_USER_DATA_DIR)
+    user_data_dir = args.user_data_dir or os.environ.get("USER_DATA_DIR") or settings.get("user_data_dir") or "user_profile"
     os.environ["USER_DATA_DIR"] = user_data_dir
 
-    if args.login:
-        username = args.username
-        password = args.password
+    login = args.login if args.login is not None else settings.get("login", False)
+    if login:
+        username = args.username or settings.get("username")
+        password = args.password or settings.get("password")
         
         # If no display is available (headless environment) and no credentials provided, prompt the user
         is_headless_env = os.name != 'nt' and not os.environ.get("DISPLAY")
@@ -73,12 +74,13 @@ async def main_async():
         await run_login_flow(user_data_dir, username, password)
         return
 
-    if not args.target:
+    target = args.target or settings.get("target")
+    if not target:
         parser.print_help()
         return
 
     # Parse targets into profile usernames and specific album URLs
-    profile_targets, album_targets = parse_targets(args.target)
+    profile_targets, album_targets = parse_targets(target)
 
     if not profile_targets and not album_targets:
         console.print("[bold red]Please provide a valid LiveJournal profile URL, username, album URL, or text file of targets as an argument.[/bold red]")
@@ -101,7 +103,40 @@ async def main_async():
 
     start_time = time.time()
     all_results = []
-    headless = not args.headed
+    
+    # Resolve headless setting: CLI flags override config setting
+    headed = None
+    if args.headed is not None or args.headless is not None:
+        if args.headed:
+            headed = True
+        elif args.headless:
+            headed = False
+            
+    if headed is None:
+        headed = settings.get("headed")
+        
+    if headed is None:
+        headless_cfg = settings.get("headless")
+        if headless_cfg is not None:
+            headed = not headless_cfg
+            
+    if headed is None:
+        headed = False
+        
+    headless = not headed
+
+     # Resolve delay setting: CLI flag overrides config setting
+    delay = args.delay if args.delay is not None else settings.get("delay") if settings.get("delay") is not None else settings.get("default_delay", 0.0)
+
+    # Resolve all_posts setting
+    all_posts = args.all_posts if args.all_posts is not None else settings.get("all_posts", False)
+
+    # Resolve concurrency setting: CLI flag overrides config setting
+    concurrency = args.concurrency if args.concurrency is not None else settings.get("concurrency", 2)
+    concurrency = max(1, concurrency)
+
+    # Resolve timeout setting: CLI flag overrides config setting
+    timeout = args.timeout if args.timeout is not None else settings.get("timeout", 20.0)
 
     async with async_playwright() as p:
         console.print(f"[bold blue]Launching browser context from session directory: {Path(user_data_dir).resolve()}[/bold blue]")
