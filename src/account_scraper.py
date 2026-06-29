@@ -19,7 +19,7 @@ from .utils import (
 class LiveJournalAccount:
     """Represents a LiveJournal user and manages their specific scraping tasks."""
 
-    def __init__(self, context, username: str, options: dict, delay: float = 0.0):
+    def __init__(self, context, username: str, options: dict, delay: float = 1.0):
         self.context = context
         self.username = username
         self.options = options
@@ -27,6 +27,7 @@ class LiveJournalAccount:
         self.jitter = random.uniform(0.5, 1.5) * delay
         self.user_dir = Path(f"output/{username}")
         self.is_retrying = False
+        self.timeout = 30   #TODO: Fix
 
         self.base_url = f"https://{username}.livejournal.com"
         self.urls = {
@@ -50,7 +51,7 @@ class LiveJournalAccount:
             "photos": "skipped"
         }
 
-    async def _fetch_page(self, url: str, max_attempts: int = 7, status_or_spinner: Spinner = None) -> Page | None:
+    async def _fetch_page(self, url: str, max_attempts: int = 7, status_or_spinner = None) -> Page | None:
         """Navigates to the given URL with retries and returns the active page object."""
         import asyncio
         await asyncio.sleep(self.jitter)
