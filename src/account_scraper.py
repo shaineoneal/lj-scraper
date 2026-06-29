@@ -133,8 +133,7 @@ class LiveJournalAccount:
         async def save(page, spinner, res):
             title = await page.title()
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
-            safe_title = safe_title or "entries"
-            save_path = self.user_dir / safe_title
+            safe_title = safe_title or f"{self.username} - Recent Entries"
             
             await self._save_page_assets(page, spinner, self.urls['entries'], safe_title, res)
 
