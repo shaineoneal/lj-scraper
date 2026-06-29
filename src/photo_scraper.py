@@ -239,6 +239,7 @@ class LiveJournalPhotoScraper:
                         writer.writerow([album_id, metadata.get("title", ""), metadata.get("description", ""), img_url, desc_text])
                     else:
                         stats["failed"] += 1
+                        progress.update(task, description=f"[red]Failed to download:[/red] [yellow]{img_filename}[/yellow]")
 
                     progress.advance(task)
 
