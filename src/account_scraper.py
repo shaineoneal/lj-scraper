@@ -29,13 +29,15 @@ class LiveJournalAccount:
         self.is_retrying = False
         self.timeout = 30   #TODO: Fix
 
-        self.base_url = f"https://{username}.livejournal.com"
+
+        clean_username = username.replace("_", "-")
+        self.base_url = f"https://{clean_username}.livejournal.com"
         self.urls = {
             "entries": self.base_url,
             "profile": f"{self.base_url}{URL_SUFFIX['profile']}",
             "tags": f"{self.base_url}{URL_SUFFIX['tags']}",
-            "userpics": f"https://www.livejournal.com/allpics.bml?user={username}",
-            "vgifts": f"https://www.livejournal.com/manage/vgift.bml?u={username}",
+            "userpics": f"https://www.livejournal.com/allpics.bml?user={clean_username}",
+            "vgifts": f"https://www.livejournal.com/manage/vgift.bml?u={clean_username}",
             "memories": f"{self.base_url}{URL_SUFFIX['memories']}",
             "photos": f"{self.base_url}{URL_SUFFIX['photos']}"
         }
