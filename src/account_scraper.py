@@ -34,7 +34,7 @@ class LiveJournalAccount:
         self.base_url = f"https://{clean_username}.livejournal.com"
         self.urls = {
             "entries": self.base_url,
-            "profile": f"{self.base_url}{URL_SUFFIX['profile']}",
+            "profile": f"https://www.livejournal.com/{clean_username}/profile",
             "tags": f"{self.base_url}{URL_SUFFIX['tags']}",
             "userpics": f"https://www.livejournal.com/allpics.bml?user={clean_username}",
             "vgifts": f"https://www.livejournal.com/manage/vgift.bml?u={clean_username}",
