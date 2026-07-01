@@ -10,7 +10,6 @@ import configargparse
 from playwright.async_api import async_playwright
 from rich.panel import Panel
 
-import config
 from .config import console, DEFAULT_USER_DATA_DIR, settings
 from .browser import run_login_flow, launch_browser_with_fallback
 from .account_scraper import LiveJournalAccount
