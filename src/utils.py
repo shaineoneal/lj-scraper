@@ -131,27 +131,29 @@ async def scroll_with_keyboard(page: Page, spinner: Spinner, mem_count=None):
 
 async def check_for_tags(page: Page, timeout: int = 7500) -> bool:
     try:
-        await expect(page.locator('a[href*="/tag"]').nth(0)).to_be_visible(timeout=timeout)
-        return True
-    except (AssertionError, PlaywrightError):
+        await page.get_by_text("Tags").wait_for(state="attached", timeout=timeout)
+        return len(await page.locator('a[href*="/tag"]').all()) != 0
+    except PlaywrightError, TimeoutError:
         return False
 
 async def check_for_memories(page: Page, timeout: int = 7500) -> bool:
     try:
-        await expect(page.locator('div.b-lenta-body > article').nth(0)).to_be_visible(timeout=timeout)
+        await page.locator('div.b-lenta-body > article').nth(0).wait_for(state="attached", timeout=timeout)
         return True
-    except (AssertionError, PlaywrightError):
+    except AssertionError, PlaywrightError:
         return False
 
 async def check_for_vgifts(page: Page, timeout: int = 7500) -> bool:
     try:
-        return len(await page.locator('.b-vgifts').all(timeout=timeout)) != 0
-    except PlaywrightError:
+        await page.get_by_text("a virtual gift").wait_for(state="visible")
+        return len(await page.locator('.b-vgifts').all()) != 0
+    except PlaywrightError, TimeoutError:
         return False
 
 async def check_for_userpics(page: Page, timeout: int = 7500) -> bool:
     try:
-        return len(await page.get_by_text("No Pictures").all(timeout=timeout)) == 0
+        await page.locator('h1').nth(1).wait_for(state="attached", timeout=timeout)
+        return len(await page.get_by_text("No Pictures").all()) == 0
     except PlaywrightError:
         return False
 
