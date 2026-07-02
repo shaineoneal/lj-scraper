@@ -133,21 +133,21 @@ async def check_for_tags(page: Page, timeout: int = 7500) -> bool:
     try:
         await page.get_by_text("Tags").wait_for(state="attached", timeout=timeout)
         return len(await page.locator('a[href*="/tag"]').all()) != 0
-    except PlaywrightError, TimeoutError:
+    except (PlaywrightError, TimeoutError):
         return False
 
 async def check_for_memories(page: Page, timeout: int = 7500) -> bool:
     try:
         await page.locator('div.b-lenta-body > article').nth(0).wait_for(state="attached", timeout=timeout)
         return True
-    except AssertionError, PlaywrightError:
+    except (AssertionError, PlaywrightError):
         return False
 
 async def check_for_vgifts(page: Page, timeout: int = 7500) -> bool:
     try:
         await page.get_by_text("a virtual gift").wait_for(state="visible")
         return len(await page.locator('.b-vgifts').all()) != 0
-    except PlaywrightError, TimeoutError:
+    except (PlaywrightError, TimeoutError):
         return False
 
 async def check_for_userpics(page: Page, timeout: int = 7500) -> bool:
