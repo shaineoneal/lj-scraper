@@ -6,7 +6,7 @@ from rich.console import Console
 
 console = Console()
 
-CONFIG_FILE = Path("scraper_config.json")
+CONFIG_FILE = Path("config.json")
 
 DEFAULT_SETTINGS = {
     "target": "",
@@ -14,13 +14,13 @@ DEFAULT_SETTINGS = {
     "login": False,
     "headed": False,
     "delay": None,
-    "entries": None,
-    "profile": None,
-    "tags": None,
-    "userpics": None,
-    "vgifts": None,
-    "memories": None,
-    "photos": None
+    "entries": True,
+    "profile": True,
+    "tags": True,
+    "userpics": True,
+    "vgifts": True,
+    "memories": True,
+    "photos": True
 }
 
 def load_config() -> dict:

@@ -12,7 +12,8 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
         context = await p.chromium.launch_persistent_context(
             user_data_dir=user_data_dir,
             headless=headless,
-            args=args
+            args=args,
+            ignore_https_errors=True
         )
         return context
     except Exception as e:
@@ -29,7 +30,8 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
             user_data_dir=user_data_dir,
             headless=headless,
             channel="chrome",
-            args=args
+            args=args,
+            ignore_https_errors=True
         )
         return context
     except Exception as e:
@@ -42,7 +44,8 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
             user_data_dir=user_data_dir,
             headless=headless,
             channel="chromium",
-            args=args
+            args=args,
+            ignore_https_errors=True
         )
         return context
     except Exception as e:

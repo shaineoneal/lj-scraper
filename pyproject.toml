@@ -17,7 +17,8 @@ classifiers = [
 dependencies = [
     "playwright>=1.40.0",
     "PyMuPDF>=1.23.0",
-    "rich>=13.0.0"
+    "rich>=13.0.0",
+    "configargparse>=1.5.0"
 ]
 
 [project.scripts]
@@ -25,4 +26,4 @@ lj-scraper = "src.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["lj_scrapers*"]
+include = ["src*"]

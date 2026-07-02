@@ -35,7 +35,29 @@ async def compress_pdf(input_path: str):
     try:
         doc = fitz.open(input_path)
         for page in doc:
-            page.clean_contents()
+            text_rect = fitz.Rect()
+
+            # 1. Loop ONLY through text blocks to find where text actually exists
+            for block in page.get_text("blocks"):
+                # block coordinate unpacks as (x0, y0, x1, y1, text, block_no, block_type)
+                # block[4] contains the actual string content
+                if block[4].strip():  # Skip blocks that contain only whitespace characters
+                    text_rect |= block[:4]
+
+            # 2. Apply the cropbox only if valid text was detected
+            if text_rect.is_valid and not text_rect.is_empty:
+                # Add a 15-point padding buffer so text doesn't touch the canvas frame
+                padding = 15
+
+                crop_rect = fitz.Rect(
+                    0,
+                    0,
+                    page.rect.width,
+                    min(page.rect.height, text_rect.y1 + 10)
+                )
+
+                # Crop the page viewport. Backgrounds inside this frame stay intact.
+                page.set_cropbox(crop_rect)
         doc.save(
             temp_path,
             deflate=True,
@@ -107,28 +129,30 @@ async def scroll_with_keyboard(page: Page, spinner: Spinner, mem_count=None):
             loaded_str = f"{current_count}/{target}" if mem_count else str(current_count)
             spinner.update(text=f"[bold blue]Scrolling...[/bold blue][dim] Loaded [/dim][blue]{loaded_str}[/blue] [dim]entries[/dim]")
 
-async def check_for_tags(page: Page) -> bool:
+async def check_for_tags(page: Page, timeout: int = 7500) -> bool:
     try:
-        await expect(page.locator('a[href*="tag"]').nth(8)).to_be_attached(timeout=7500)
+        await page.get_by_text("Tags").wait_for(state="attached", timeout=timeout)
+        return len(await page.locator('a[href*="/tag"]').all()) != 0
+    except (PlaywrightError, TimeoutError):
+        return False
+
+async def check_for_memories(page: Page, timeout: int = 7500) -> bool:
+    try:
+        await page.locator('div.b-lenta-body > article').nth(0).wait_for(state="attached", timeout=timeout)
         return True
     except (AssertionError, PlaywrightError):
         return False
 
-async def check_for_memories(page: Page) -> bool:
+async def check_for_vgifts(page: Page, timeout: int = 7500) -> bool:
     try:
-        await expect(page.locator('div.b-lenta-body > article').nth(0)).to_be_visible(timeout=7500)
-        return True
-    except (AssertionError, PlaywrightError):
-        return False
-
-async def check_for_vgifts(page: Page) -> bool:
-    try:
+        await page.get_by_text("a virtual gift").wait_for(state="visible")
         return len(await page.locator('.b-vgifts').all()) != 0
-    except PlaywrightError:
+    except (PlaywrightError, TimeoutError):
         return False
 
-async def check_for_userpics(page: Page) -> bool:
+async def check_for_userpics(page: Page, timeout: int = 7500) -> bool:
     try:
+        await page.locator('h1').nth(1).wait_for(state="attached", timeout=timeout)
         return len(await page.get_by_text("No Pictures").all()) == 0
     except PlaywrightError:
         return False
