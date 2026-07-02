@@ -19,7 +19,7 @@ from .utils import (
 class LiveJournalAccount:
     """Represents a LiveJournal user and manages their specific scraping tasks."""
 
-    def __init__(self, context, username: str, options: dict, delay: float = 1.0):
+    def __init__(self, context, username: str, options: dict, delay: float = 7.5):
         self.context = context
         self.username = username
         self.options = options
@@ -28,6 +28,7 @@ class LiveJournalAccount:
         self.user_dir = Path(f"output/{username}")
         self.is_retrying = False
         self.timeout = 30   #TODO: Fix
+        self.delay = delay
 
 
         clean_username = username.replace("_", "-")
@@ -98,7 +99,7 @@ class LiveJournalAccount:
         async with initialize_spinner(f"Preparing to scrape {label}...") as spinner:
             try:
                 page = await self._fetch_page(url, status_or_spinner=spinner)
-                if check_fn and not await check_fn(page):
+                if check_fn and not await check_fn(page, int(self.delay * 1000)):
                     console.print(f"    [bold yellow]⚠[/bold yellow] [dim]No {label} found for {self.username}, skipping.[/dim]")
                     return result
 
@@ -173,8 +174,8 @@ class LiveJournalAccount:
 
         return await self._scrape_task("vgifts", "virtual gifts", check_fn=check_for_vgifts, save_fn=save)
 
-    async def scrape_memories(self, mem_count: int | None = None) -> dict:
-        async def check(page) -> bool:
+    async def scrape_memories(self, mem_count = None) -> dict:
+        async def check(page, mem_count) -> bool:
             if mem_count is None or mem_count == 0:
                 return await check_for_memories(page)
             return True
@@ -188,7 +189,7 @@ class LiveJournalAccount:
         return await self._scrape_task("memories", "memories", check_fn=check, save_fn=save)
 
     async def scrape_photos(self) -> dict:
-        async def check(page) -> bool:
+        async def check(page, timeout) -> bool:
             return True if page else False
 
         async def save(page, spinner, res):
