@@ -35,7 +35,29 @@ async def compress_pdf(input_path: str):
     try:
         doc = fitz.open(input_path)
         for page in doc:
-            page.clean_contents()
+            text_rect = fitz.Rect()
+
+            # 1. Loop ONLY through text blocks to find where text actually exists
+            for block in page.get_text("blocks"):
+                # block coordinate unpacks as (x0, y0, x1, y1, text, block_no, block_type)
+                # block[4] contains the actual string content
+                if block[4].strip():  # Skip blocks that contain only whitespace characters
+                    text_rect |= block[:4]
+
+            # 2. Apply the cropbox only if valid text was detected
+            if text_rect.is_valid and not text_rect.is_empty:
+                # Add a 15-point padding buffer so text doesn't touch the canvas frame
+                padding = 15
+
+                crop_rect = fitz.Rect(
+                    0,
+                    0,
+                    page.rect.width,
+                    min(page.rect.height, text_rect.y1 + 10)
+                )
+
+                # Crop the page viewport. Backgrounds inside this frame stay intact.
+                page.set_cropbox(crop_rect)
         doc.save(
             temp_path,
             deflate=True,
