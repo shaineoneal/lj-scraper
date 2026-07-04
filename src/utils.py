@@ -234,3 +234,15 @@ def print_summary_table(all_users: list, elapsed_time: float):
 
     console.print("\n")
     console.print(table)
+
+async def get_account_type(page: Page) -> str:
+    try:
+        await page.locator('.ljuser').first.wait_for(state="attached")
+        account_type = await page.locator('.ljuser').first.get_attribute('class')
+        if "i-ljuser-type-P" in account_type:
+            return "personal"
+        elif "i-ljuser-type-C" in account_type:
+            return "community"
+    except Exception:
+        console.print("[bold yellow]Could not determine account type.[/bold yellow]")
+        return None

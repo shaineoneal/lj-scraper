@@ -13,7 +13,8 @@ from .utils import (
     check_for_tags,
     check_for_memories,
     check_for_vgifts,
-    check_for_userpics
+    check_for_userpics,
+    get_account_type
 )
 
 class LiveJournalAccount:
@@ -22,6 +23,7 @@ class LiveJournalAccount:
     def __init__(self, context, username: str, options: dict, delay: float = 7.5):
         self.context = context
         self.username = username
+        self.account_type = None
         self.options = options
         import random
         self.jitter = random.uniform(0.5, 1.5) * delay
@@ -53,6 +55,7 @@ class LiveJournalAccount:
             "memories": "skipped",
             "photos": "skipped"
         }
+        self.has_run_user_info = False
 
     async def _fetch_page(self, url: str, max_attempts: int = 7, status_or_spinner = None) -> Page | None:
         """Navigates to the given URL with retries and returns the active page object."""
@@ -81,6 +84,11 @@ class LiveJournalAccount:
                             return None
                     raise Exception(f"HTTP Status {resp.status}", resp.status)
 
+                if not self.has_run_user_info:
+                    self.has_run_user_info = True
+                    await self.run_once_per_user(page)
+                    if self.account_type == "community" and 'photo' in url:
+                        raise Exception("Community account detected, skipping photo albums.")
                 return page
 
             except TimeoutError as e:
@@ -100,15 +108,17 @@ class LiveJournalAccount:
             try:
                 page = await self._fetch_page(url, status_or_spinner=spinner)
                 if check_fn and not await check_fn(page, int(self.delay * 1000)):
-                    console.print(f"    [bold yellow]⚠[/bold yellow] [dim]No {label} found for {self.username}, skipping.[/dim]")
+                    if task_name != "photos" and self.account_type != "community":
+                        console.print(f"    [bold yellow]⚠[/bold yellow] [dim]No {label} found for {self.username}, skipping.[/dim]")
                     return result
 
                 if save_fn:
                     await save_fn(page, spinner, result)
                 result["success"] = True
             except Exception as e:
-                console.print(f"    [bold red]✗[/bold red] [dim]Failed:[/dim] {url} - {str(e)}")
-                result["error"] = str(e)
+                if task_name != "photos" and account_type != "community":
+                    console.print(f"    [bold red]✗[/bold red] [dim]Failed:[/dim] {url} - {str(e)}")
+                    result["error"] = str(e)
             finally:
                 if page:
                     await page.close()
@@ -130,8 +140,9 @@ class LiveJournalAccount:
                 await compress_pdf(f"{save_path}.pdf")
         except Exception as e:
             console.print(f"    [bold red]✗[/bold red] [dim]Error saving assets for {label}:[/dim] {e}")
-            
-        console.print(f"    [bold green]✓[/bold green] [dim]Saved HTML & PDF:[/dim] {label}")
+
+        if label is not self.urls["photos"]:
+            console.print(f"    [bold green]✓[/bold green] [dim]Saved HTML & PDF:[/dim] {label}")
 
     async def scrape_entries(self) -> dict:
         async def save(page, spinner, res):
@@ -190,6 +201,9 @@ class LiveJournalAccount:
 
     async def scrape_photos(self) -> dict:
         async def check(page, timeout) -> bool:
+            if self.account_type != "personal":
+                console.print(
+                    f"    [bold][dim]ⓘ[/bold] Photo albums are not available for community accounts, skipping.[/dim]")
             return True if page else False
 
         async def save(page, spinner, res):
@@ -241,6 +255,23 @@ class LiveJournalAccount:
             console.print(f"    [bold green]✓[/bold green] [dim]Downloaded {success_count}/{len(album_urls)} albums.[/dim]")
 
         return await self._scrape_task("photos", "photos", check_fn=check, save_fn=save)
+
+    async def run_once_per_user(self, page: Page):
+        """Custom hook executed once per user using the first successfully loaded page.
+        Extracts user information from the page.
+        """
+        try:
+            account_type = await get_account_type(page)
+            if account_type is not None:
+                if account_type == "personal":
+                    self.account_type = "personal"
+                    console.print(f"\n[bold magenta]:bust_in_silhouette:  Processing personal account:[/bold magenta] {self.username}")
+                elif account_type == "community":
+                    self.account_type = "community"
+                    console.print(f"\n[bold magenta]:busts_in_silhouette:  Processing community account:[/bold magenta] {self.username}")
+
+        except Exception as e:
+            console.print(f"    [bold yellow]⚠[/bold yellow] [dim]Failed to extract initial user info:[/dim] {e}")
 
     async def process(self):
         """Executes all selected scraping tasks for the account."""
