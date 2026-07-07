@@ -131,7 +131,7 @@ async def scroll_with_keyboard(page: Page, spinner: Spinner, mem_count=None):
 
 async def check_for_tags(page: Page, timeout: int = 7500) -> bool:
     try:
-        await page.get_by_text(re.compile(r"Tags|Entries|Archive|Profile", re.IGNORECASE)).wait_for(state="attached", timeout=timeout)
+        await page.locator("a[href*='/feed'], a[href*='/profile'], a[href*='/calendar']").first.wait_for(state="visible", timeout=timeout)
         return len(await page.locator('a[href*="/tag"]').all()) != 0
     except (PlaywrightError, TimeoutError):
         return False

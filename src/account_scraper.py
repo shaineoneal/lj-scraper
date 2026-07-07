@@ -108,8 +108,9 @@ class LiveJournalAccount:
             try:
                 page = await self._fetch_page(url, status_or_spinner=spinner)
                 if check_fn and not await check_fn(page, int(self.delay * 1000)):
-                    if task_name != "photos" and self.account_type != "community":
-                        console.print(f"    [bold yellow]⚠[/bold yellow] [dim]No {label} found for {self.username}, skipping.[/dim]")
+                    if task_name == "photos" and self.account_type == "community":
+                        return result
+                    console.print(f"    [bold yellow]⚠[/bold yellow] [dim]No {label} found for {self.username}, skipping.[/dim]")
                     return result
 
                 if save_fn:
@@ -118,7 +119,7 @@ class LiveJournalAccount:
             except Exception as e:
                 if task_name != "photos" and self.account_type != "community":
                     console.print(f"    [bold red]✗[/bold red] [dim]Failed:[/dim] {url} - {str(e)}")
-                    result["error"] = str(e)
+                    result["error"] = True
             finally:
                 if page:
                     await page.close()
