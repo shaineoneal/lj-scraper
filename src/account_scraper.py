@@ -14,7 +14,8 @@ from .utils import (
     check_for_memories,
     check_for_vgifts,
     check_for_userpics,
-    get_account_type
+    get_account_type,
+    get_logged_in
 )
 
 class LiveJournalAccount:
@@ -264,6 +265,11 @@ class LiveJournalAccount:
         Extracts user information from the page.
         """
         try:
+            logged_in = await get_logged_in(page)
+            if logged_in:
+                console.print(f"    [bold green]✓[/bold green] [dim]Logged in as {logged_in}[/dim]")
+            else:
+                console.print(f"    [bold yellow]⚠[/bold yellow] [dim]Not logged in! Some content may be restricted.[/dim]")
             account_type = await get_account_type(page)
             if account_type is not None:
                 if account_type == "personal":

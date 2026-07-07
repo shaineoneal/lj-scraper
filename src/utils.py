@@ -246,3 +246,16 @@ async def get_account_type(page: Page) -> str:
     except Exception:
         console.print("[bold yellow]Could not determine account type.[/bold yellow]")
         return None
+
+async def get_logged_in(page) -> str:
+    """Checks if the user is logged in."""
+    try:
+        if await page.get_by_text("JOIN FREE").is_visible():
+            return ""
+        else:
+            user = (await page.locator('.s-header-item__link--user').text_content()).strip()
+            print(f"Detected logged-in user: {user}")
+            return user if user else ""
+    except Exception:
+        return ""
+
