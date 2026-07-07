@@ -125,7 +125,7 @@ class LiveJournalAccount:
                     await page.close()
         return result
 
-    async def _save_page_assets(self, page, spinner, label, filename, res) -> None:
+    async def _save_page_assets(self, page, spinner, task_name, filename, res) -> None:
         """Helper to download both HTML and PDF, compress the PDF, and update results."""
         save_path = self.user_dir / filename
 
@@ -140,10 +140,12 @@ class LiveJournalAccount:
                 spinner.update(text="[bold blue]Compressing PDF...[/bold blue]")
                 await compress_pdf(f"{save_path}.pdf")
         except Exception as e:
-            console.print(f"    [bold red]✗[/bold red] [dim]Error saving assets for {label}:[/dim] {e}")
+            console.print(f"    [bold red]✗[/bold red] [dim]Error saving assets for {task_name}:[/dim] {e}")
 
-        if label is not self.urls["photos"]:
-            console.print(f"    [bold green]✓[/bold green] [dim]Saved HTML & PDF:[/dim] {label}")
+        if task_name is not self.urls["photos"]:
+            console.print(f"    [bold green]✓[/bold green] [dim]Saved HTML & PDF:[/dim] {task_name}")
+        elif task_name != "photos" and task_name != "memory_index":
+            console.print(f"    [bold green]✓[/bold green] [dim]Saved assets for:[/dim] {task_name}")
 
     async def scrape_entries(self) -> dict:
         async def save(page, spinner, res):
@@ -151,14 +153,14 @@ class LiveJournalAccount:
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             safe_title = safe_title or f"{self.username} - Recent Entries"
             
-            await self._save_page_assets(page, spinner, self.urls['entries'], safe_title, res)
+            await self._save_page_assets(page, spinner, "entries", safe_title, res)
 
         return await self._scrape_task("entries", "recent entries", save_fn=save)
 
     async def scrape_profile(self) -> dict:
         async def save(page, spinner, res):
             filename = f"{self.username} - Profile"
-            await self._save_page_assets(page, spinner, self.urls['profile'], filename, res)
+            await self._save_page_assets(page, spinner, "profile", filename, res)
             
             memory_count = await page.locator('.b-profile-stat-memcount > .b-profile-stat-value').all_inner_texts()
             res["mem_count"] = int(memory_count[0].replace(',', '')) if memory_count else 0
@@ -168,21 +170,21 @@ class LiveJournalAccount:
     async def scrape_tags(self) -> dict:
         async def save(page, spinner, res):
             filename = f"{self.username} - Tags"
-            await self._save_page_assets(page, spinner, self.urls['tags'], filename, res)
+            await self._save_page_assets(page, spinner, "tags", filename, res)
 
         return await self._scrape_task("tags", "tags", check_fn=check_for_tags, save_fn=save)
 
     async def scrape_userpics(self) -> dict:
         async def save(page, spinner, res):
             filename = f"{self.username} - Userpics"
-            await self._save_page_assets(page, spinner, self.urls['userpics'], filename, res)
+            await self._save_page_assets(page, spinner, "userpics", filename, res)
 
         return await self._scrape_task("userpics", "userpics", check_fn=check_for_userpics, save_fn=save)
 
     async def scrape_vgifts(self) -> dict:
         async def save(page, spinner, res):
             filename = f"{self.username} - Virtual Gifts"
-            await self._save_page_assets(page, spinner, self.urls['vgifts'], filename, res)
+            await self._save_page_assets(page, spinner, "vgifts", filename, res)
 
         return await self._scrape_task("vgifts", "virtual gifts", check_fn=check_for_vgifts, save_fn=save)
 
@@ -209,7 +211,7 @@ class LiveJournalAccount:
 
         async def save(page, spinner, res):
             filename = f"{self.username} - Photo Albums"
-            await self._save_page_assets(page, spinner, self.urls['photos'], filename, res)
+            await self._save_page_assets(page, spinner, "photos", filename, res)
 
             # Extract album links
             from .photo_scraper import LiveJournalPhotoScraper
