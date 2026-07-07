@@ -116,7 +116,7 @@ class LiveJournalAccount:
                     await save_fn(page, spinner, result)
                 result["success"] = True
             except Exception as e:
-                if task_name != "photos" and account_type != "community":
+                if task_name != "photos" and self.account_type != "community":
                     console.print(f"    [bold red]✗[/bold red] [dim]Failed:[/dim] {url} - {str(e)}")
                     result["error"] = str(e)
             finally:
