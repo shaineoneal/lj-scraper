@@ -3,7 +3,7 @@ from os import mkdir
 from pathlib import Path
 from playwright.async_api import Page, Error as PlaywrightError
 from rich.spinner import Spinner
-from .config import console, URL_SUFFIX
+from .config import console, URL_SUFFIX, settings
 from .utils import (
     initialize_spinner,
     download_pdf,
@@ -44,6 +44,7 @@ class LiveJournalAccount:
             "userpics": f"https://www.livejournal.com/allpics.bml?user={clean_username}",
             "vgifts": f"https://www.livejournal.com/manage/vgift.bml?u={clean_username}",
             "memories": f"{self.base_url}{URL_SUFFIX['memories']}",
+            "memory_index": f"https://www.livejournal.com/tools/memories.bml?user={clean_username}",
             "photos": f"{self.base_url}{URL_SUFFIX['photos']}"
         }
 
@@ -145,9 +146,9 @@ class LiveJournalAccount:
         except Exception as e:
             console.print(f"    [bold red]✗[/bold red] [dim]Error saving assets for {task_name}:[/dim] {e}")
 
-        if task_name is not self.urls["photos"]:
-            console.print(f"    [bold green]✓[/bold green] [dim]Saved HTML & PDF:[/dim] {task_name}")
-        elif task_name != "photos" and task_name != "memory_index":
+        if task_name == "memory_index":
+            console.print(f"        [bold green]✓[/bold green] [dim]Saved assets for:[/dim] {task_name} (Memory Index only, not full memories)")
+        if task_name != "photos" and task_name != "memory_index":
             console.print(f"    [bold green]✓[/bold green] [dim]Saved assets for:[/dim] {task_name}")
 
     async def scrape_entries(self) -> dict:
@@ -166,7 +167,7 @@ class LiveJournalAccount:
             await self._save_page_assets(page, spinner, "profile", filename, res)
             
             memory_count = await page.locator('.b-profile-stat-memcount > .b-profile-stat-value').all_inner_texts()
-            res["mem_count"] = int(memory_count[0].replace(',', '')) if memory_count else 0
+            res["mem_count"] = memory_count[0].replace(',', '') if memory_count else "0"
 
         return await self._scrape_task("profile", "profile", save_fn=save)
 
@@ -201,7 +202,17 @@ class LiveJournalAccount:
             filename = f"{self.username} - Memories"
             await scroll_with_keyboard(page, spinner, mem_count)
             await page.wait_for_timeout(5000)
-            await self._save_page_assets(page, spinner, self.urls['memories'], filename, res)
+            await self._save_page_assets(page, spinner, "memories", filename, res)
+
+        if mem_count and int(mem_count) > settings.get('max_memories', 750):
+            console.print(
+                f"    [bold yellow]⚠[/bold yellow] [dim]Memory count ({mem_count}) exceeds max_memories ({settings.get('max_memories', 750)}).[/dim]")
+            async with initialize_spinner("Navigating to Memory Index...", status=self.status) as spinner:
+                async def save(page, spinner, res):
+                    filename = f"{self.username} - Memory Index"
+                    await self._save_page_assets(page, spinner, "memory_index", filename, res)
+
+                return await self._scrape_task("memory_index", "memory index", save_fn=save)
 
         return await self._scrape_task("memories", "memories", check_fn=check, save_fn=save)
 
@@ -296,7 +307,7 @@ class LiveJournalAccount:
         if self.options.get("profile"):
             res = await self.scrape_profile()
             self.results["profile"] = "success" if res['success'] else "failed"
-            self.results["mem_count"] = res.get("mem_count", 0)
+            self.results["mem_count"] = res.get("mem_count", "0")
 
         if self.options.get("tags"):
             res = await self.scrape_tags()

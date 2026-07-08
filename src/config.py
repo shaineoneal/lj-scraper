@@ -11,6 +11,7 @@ CONFIG_FILE = Path("config.json")
 DEFAULT_SETTINGS = {
     "target": "",
     "user_data_dir": "user_profile",
+    "max_memories": 750,
     "login": False,
     "headed": False,
     "delay": None,
