@@ -160,6 +160,13 @@ async def check_for_userpics(page: Page, timeout: int = 7500) -> bool:
     except PlaywrightError:
         return False
 
+async def check_for_albums(page: Page, timeout: int = 7500) -> bool:
+    try:
+        await page.locator('h1').nth(0).wait_for(state="attached", timeout=timeout)
+        return len(await page.get_by_text("No Albums").all()) == 0
+    except PlaywrightError:
+        return False
+
 def parse_targets(target_str: str) -> tuple[list[str], list[str]]:
     """Parses a target string (URL, username, or file) and returns (profile_targets, album_targets)."""
     if not target_str:

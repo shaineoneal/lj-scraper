@@ -14,6 +14,7 @@ from .utils import (
     check_for_memories,
     check_for_vgifts,
     check_for_userpics,
+    check_for_albums,
     get_account_type,
     get_logged_in
 )
@@ -221,7 +222,9 @@ class LiveJournalAccount:
             if self.account_type != "personal":
                 console.print(
                     f"    [bold][dim]ⓘ[/bold] Photo albums are not available for community accounts, skipping.[/dim]")
-            return True if page else False
+                return False
+
+            return await check_for_albums(page, timeout) if page else False
 
         async def save(page, spinner, res):
             filename = f"{self.username} - Photo Albums"
