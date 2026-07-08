@@ -82,8 +82,10 @@ async def main_async():
     parser.add_argument("--photos", type=str2bool, nargs="?", const=True, default=None,
                         help="Scrape photos (downloads metadata and photo albums).")
 
-    parser.add_argument("--max-memories", type=int, nargs="?", const=True, default=None,
+    parser.add_argument("--max-memories", type=int, nargs="?", const=True, default=750,
                         help="Maximum number of memories to scrape (default: 750).")
+    parser.add_argument("--max-dl-memories", type=int, nargs="?", const=True, default=500,
+                        help="Maximum number of memories to download (default: 500).")
 
     args = parser.parse_args()
 

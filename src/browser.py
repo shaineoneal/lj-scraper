@@ -86,7 +86,7 @@ async def run_login_flow(user_data_dir: str):
             p,
             user_data_dir=user_data_dir,
             headless=False,
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
+            args=["--disable-dev-shm-usage"]
         )
         page = context.pages[0] if context.pages else await context.new_page()
         await page.goto("https://www.livejournal.com/login.bml")

@@ -34,6 +34,7 @@ class LiveJournalAccount:
         self.timeout = 30   #TODO: Fix
         self.delay = delay
         self.status = status
+        self.mem_count = 0
 
 
         clean_username = username.replace("_", "-")
@@ -193,7 +194,7 @@ class LiveJournalAccount:
 
         return await self._scrape_task("vgifts", "virtual gifts", check_fn=check_for_vgifts, save_fn=save)
 
-    async def scrape_memories(self, mem_count = None) -> dict:
+    async def scrape_memories(self) -> dict:
         async def check(page, mem_count) -> bool:
             if mem_count is None or mem_count == 0:
                 return await check_for_memories(page)
@@ -201,21 +202,28 @@ class LiveJournalAccount:
 
         async def save(page, spinner, res):
             filename = f"{self.username} - Memories"
-            await scroll_with_keyboard(page, spinner, mem_count)
+            await scroll_with_keyboard(page, spinner, self.mem_count if self.mem_count else settings.get('max_dl_memories', 500))
             await page.wait_for_timeout(5000)
             await self._save_page_assets(page, spinner, "memories", filename, res)
 
-        if mem_count and int(mem_count) > settings.get('max_memories', 750):
+        if self.mem_count > settings.get('max_memories', 750):
             console.print(
-                f"    [bold yellow]⚠[/bold yellow] [dim]Memory count ({mem_count}) exceeds max_memories ({settings.get('max_memories', 750)}).[/dim]")
-            async with initialize_spinner("Navigating to Memory Index...", status=self.status) as spinner:
-                async def save(page, spinner, res):
-                    filename = f"{self.username} - Memory Index"
-                    await self._save_page_assets(page, spinner, "memory_index", filename, res)
-
-                return await self._scrape_task("memory_index", "memory index", save_fn=save)
+                f"    [bold yellow]⚠[/bold yellow] [dim]Memory count ({self.mem_count}) exceeds max_memories, collecting the index and the first {settings.get('max_memories', 750)} memories...")
+            self.mem_count = settings.get('max_dl_memories', 500)
+        elif not self.mem_count:
+            console.print(
+                f"    [bold yellow]⚠[/bold yellow] [dim]Unknown memory count, a maximum of {settings.get('max_dl_memories', 750)} memories will be collected...")
 
         return await self._scrape_task("memories", "memories", check_fn=check, save_fn=save)
+
+    async def scrape_mem_index(self):
+        async def save(page, spinner, res):
+            filename = f"{self.username} - Memory Index"
+            await self._save_page_assets(page, spinner, "memory_index", filename, res)
+
+        async with initialize_spinner("Navigating to Memory Index...", status=self.status) as spinner:
+            await self._scrape_task("memory_index", "memory index", save_fn=save)
+
 
     async def scrape_photos(self) -> dict:
         async def check(page, timeout) -> bool:
@@ -325,8 +333,8 @@ class LiveJournalAccount:
             self.results["vgifts"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
 
         if self.options.get("memories"):
-            mem_count_val = int(self.results.get("mem_count", 0)) if self.results["profile"] != "skipped" else 0
-            res = await self.scrape_memories(mem_count_val)
+            self.mem_count = int(self.results.get("mem_count", 0)) if self.results["profile"] != "skipped" else 0
+            res = await self.scrape_memories()
             self.results["memories"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
 
         if self.options.get("photos"):
@@ -355,8 +363,8 @@ class LiveJournalAccount:
                 console.print(f"    [bold yellow]↻ Retrying {task_name} for {self.username}...[/bold yellow]")
                 
                 if task_name == "memories":
-                    mem_count_val = int(self.results.get("mem_count", 0)) if self.results["profile"] != "skipped" else 0
-                    res = await self.scrape_memories(mem_count_val)
+                    self.mem_count = int(self.results.get("mem_count", 0)) if self.results["profile"] != "skipped" else 0
+                    res = await self.scrape_memories()
                 else:
                     res = await task_method()
 

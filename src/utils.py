@@ -113,7 +113,7 @@ async def download_html(page: Page, save_path: str):
     """Downloads the current page HTML content."""
     Path(save_path).write_text(await page.content(), encoding="utf-8")
 
-async def scroll_with_keyboard(page: Page, status, mem_count=None):
+async def scroll_with_keyboard(page: Page, status, mem_count: int):
     """Scrolls down using End key to load all dynamic content/entries."""
     no_more_entries = page.get_by_text("No more entries")
     target = mem_count if mem_count and mem_count != "0" else "unknown"
@@ -121,7 +121,7 @@ async def scroll_with_keyboard(page: Page, status, mem_count=None):
     status.update(f"[bold blue]Scrolling...[/bold blue][dim] Target: [/dim][blue]{target}[/blue]")
     entry_count = len(await page.locator('.b-lenta-body > article').all())
 
-    while not await no_more_entries.is_visible():
+    while not await no_more_entries.is_visible() and entry_count < mem_count:
         await page.keyboard.down("End")
         await page.wait_for_timeout(2000)
         await page.keyboard.up("End")
@@ -141,7 +141,7 @@ async def check_for_tags(page: Page, timeout: int = 7500) -> bool:
 
 async def check_for_memories(page: Page, timeout: int = 7500) -> bool:
     try:
-        await page.locator('div.b-lenta-body > article').nth(0).wait_for(state="attached", timeout=timeout)
+        await page.locator('div.b-lenta-body > article').nth(0).wait_for(state="visible", timeout=timeout)
         return True
     except (AssertionError, PlaywrightError):
         return False
