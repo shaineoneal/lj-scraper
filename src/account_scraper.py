@@ -21,7 +21,7 @@ from .utils import (
 class LiveJournalAccount:
     """Represents a LiveJournal user and manages their specific scraping tasks."""
 
-    def __init__(self, context, username: str, options: dict, delay: float = 7.5):
+    def __init__(self, context, username: str, options: dict, delay: float = 7.5, status=None):
         self.context = context
         self.username = username
         self.account_type = None
@@ -32,6 +32,7 @@ class LiveJournalAccount:
         self.is_retrying = False
         self.timeout = 30   #TODO: Fix
         self.delay = delay
+        self.status = status
 
 
         clean_username = username.replace("_", "-")
@@ -70,7 +71,7 @@ class LiveJournalAccount:
             try:
                 msg = f"[bold blue]Navigating to {url}... (Attempt {attempt + 1})[/bold blue]"
                 if status_or_spinner:
-                    status_or_spinner.update(text=msg)
+                    status_or_spinner.update(msg, spinner="earth")
 
                 page = await self.context.new_page()
                 page.set_default_timeout(timeout_ms)
@@ -105,9 +106,10 @@ class LiveJournalAccount:
         result = {"html": False, "pdf": False, "success": False, "error": None}
         url = self.urls[task_name]
         page = None
-        async with initialize_spinner(f"Preparing to scrape {label}...") as spinner:
+        async with initialize_spinner(f"Preparing to scrape {label}...", status=self.status) as spinner:
             try:
                 page = await self._fetch_page(url, status_or_spinner=spinner)
+                spinner.update("[bold blue]Checking if page exists...[/bold blue]", spinner="dots")
                 if check_fn and not await check_fn(page, int(self.delay * 1000)):
                     if task_name == "photos" and self.account_type == "community":
                         return result
@@ -131,14 +133,14 @@ class LiveJournalAccount:
         save_path = self.user_dir / filename
 
         try:
-            spinner.update(text="[bold blue]Downloading HTML...[/bold blue]")
+            spinner.update("[bold blue]Downloading HTML...[/bold blue]")
             await download_html(page, f"{save_path}.html")
             res["html"] = True
 
-            spinner.update(text="[bold blue]Downloading PDF...[/bold blue]")
+            spinner.update("[bold blue]Downloading PDF...[/bold blue]")
             if await download_pdf(page, f"{save_path}.pdf"):
                 res["pdf"] = True
-                spinner.update(text="[bold blue]Compressing PDF...[/bold blue]")
+                spinner.update("[bold blue]Compressing PDF...[/bold blue]")
                 await compress_pdf(f"{save_path}.pdf")
         except Exception as e:
             console.print(f"    [bold red]✗[/bold red] [dim]Error saving assets for {task_name}:[/dim] {e}")
@@ -233,12 +235,11 @@ class LiveJournalAccount:
                 console.print(f"    [bold yellow]⚠[/bold yellow] [dim]No photo albums found for {self.username}.[/dim]")
                 return
 
-            console.print(f"    [bold cyan]📷 Found {len(album_urls)} photo albums to download...[/bold cyan]")
             photo_scraper = LiveJournalPhotoScraper(self.context, headless=True, delay=self.delay)
             
             success_count = 0
             for idx, album_url in enumerate(album_urls):
-                console.print(f"    [bold magenta]► Album {idx + 1}/{len(album_urls)}:[/bold magenta] {album_url}")
+                console.print(f"        [bold magenta]► Album {idx + 1}/{len(album_urls)}:[/bold magenta] {album_url}")
                 parts = album_url.split("album/")
                 album_id = parts[1].split("/")[0] if len(parts) > 1 else str(idx + 1)
                 
@@ -318,8 +319,10 @@ class LiveJournalAccount:
             res = await self.scrape_photos()
             self.results["photos"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
 
-    async def retry_failed(self) -> bool:
+    async def retry_failed(self, status=None) -> bool:
         """Retries any tasks that failed during the initial pass."""
+        if status:
+            self.status = status
         improved = False
         self.is_retrying = True
 

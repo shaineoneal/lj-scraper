@@ -12,12 +12,13 @@ class AuthenticationError(Exception):
     pass
 
 class LiveJournalPhotoScraper:
-    def __init__(self, context, headless: bool = True, image_timeout_ms: int = 15000, max_retries: int = 3, delay: float = 0.0):
+    def __init__(self, context, headless: bool = True, image_timeout_ms: int = 15000, max_retries: int = 3, delay: float = 0.0, status=None):
         self.context = context
         self.headless = headless
         self.image_timeout = image_timeout_ms
         self.max_retries = max_retries
         self.delay = delay
+        self.status = status
 
     async def scrape_album(self, url: str, output_dir: Path = None) -> bool:
         """Handles the end-to-end flow for a single album URL."""

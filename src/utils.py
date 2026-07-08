@@ -20,11 +20,14 @@ if hasattr(sys.stderr, 'reconfigure'):
 fitz.TOOLS.mupdf_display_errors(False)
 
 @asynccontextmanager
-async def initialize_spinner(text: str, spinner_type: str = "dots"):
-    """Initializes a Rich spinner and binds it to a Live display."""
-    spinner_instance = Spinner(spinner_type, text=f"[bold blue]{text}[/bold blue]")
-    with Live(spinner_instance, console=console, refresh_per_second=10, transient=True):
-        yield spinner_instance
+async def initialize_spinner(text: str, status=None, spinner_type: str = "dots"):
+    """Initializes a Rich status spinner context or updates an existing one."""
+    if status is not None:
+        status.update(f"[bold blue]{text}[/bold blue]")
+        yield status
+    else:
+        with console.status(f"[bold blue]{text}[/bold blue]", spinner=spinner_type) as new_status:
+            yield new_status
 
 async def compress_pdf(input_path: str):
     """Compresses a PDF file using PyMuPDF."""
@@ -110,12 +113,12 @@ async def download_html(page: Page, save_path: str):
     """Downloads the current page HTML content."""
     Path(save_path).write_text(await page.content(), encoding="utf-8")
 
-async def scroll_with_keyboard(page: Page, spinner: Spinner, mem_count=None):
+async def scroll_with_keyboard(page: Page, status, mem_count=None):
     """Scrolls down using End key to load all dynamic content/entries."""
     no_more_entries = page.get_by_text("No more entries")
     target = mem_count if mem_count and mem_count != "0" else "unknown"
 
-    spinner.update(text=f"[bold blue]Scrolling...[/bold blue][dim] Target: [/dim][blue]{target}[/blue]")
+    status.update(f"[bold blue]Scrolling...[/bold blue][dim] Target: [/dim][blue]{target}[/blue]")
     entry_count = len(await page.locator('.b-lenta-body > article').all())
 
     while not await no_more_entries.is_visible():
@@ -127,7 +130,7 @@ async def scroll_with_keyboard(page: Page, spinner: Spinner, mem_count=None):
         if current_count != entry_count:
             entry_count = current_count
             loaded_str = f"{current_count}/{target}" if mem_count else str(current_count)
-            spinner.update(text=f"[bold blue]Scrolling...[/bold blue][dim] Loaded [/dim][blue]{loaded_str}[/blue] [dim]entries[/dim]")
+            status.update(f"[bold blue]Scrolling...[/bold blue][dim] Loaded [/dim][blue]{loaded_str}[/blue] [dim]entries[/dim]")
 
 async def check_for_tags(page: Page, timeout: int = 7500) -> bool:
     try:
@@ -254,7 +257,6 @@ async def get_logged_in(page) -> str:
             return ""
         else:
             user = (await page.locator('.s-header-item__link--user').text_content()).strip()
-            print(f"Detected logged-in user: {user}")
             return user if user else ""
     except Exception:
         return ""

@@ -177,7 +177,7 @@ async def main_async():
 
     async with async_playwright() as p:
         console.print(
-            f"[bold blue]Launching browser context from session directory: {Path(user_data_dir).resolve()}[/bold blue]")
+            f"[bold blue]Launching browser context from session directory:[/bold blue] [dim]{Path(user_data_dir).resolve()}[/dim]\n")
         context = await launch_browser_with_fallback(
             p,
             user_data_dir=user_data_dir,
@@ -188,13 +188,12 @@ async def main_async():
         try:
             # 1. Process profile scraping targets
             if profile_targets:
-                console.print(
-                    f"\n[bold green]=== Starting account scraping for {len(profile_targets)} account(s) ===[/bold green]")
-                for username in profile_targets:
-                    console.print(f"\n[bold magenta]► Processing LJ account:[/bold magenta] {username}")
-                    lj_user = LiveJournalAccount(context, username, options, delay=delay)
-                    await lj_user.process()
-                    all_results.append(lj_user)
+                with console.status("[bold blue]Scraping LJ accounts...[/bold blue]") as status:
+                    for username in profile_targets:
+                        status.update(f"[bold magenta]► Processing LJ account: {username}[/bold magenta]")
+                        lj_user = LiveJournalAccount(context, username, options, delay=delay, status=status)
+                        await lj_user.process()
+                        all_results.append(lj_user)
 
                     # Retry pass for failed profile tasks
                 failed_users = [user for user in all_results if "failed" in user.results.values()]
