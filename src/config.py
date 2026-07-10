@@ -39,7 +39,7 @@ def load_config(path: Path = CONFIG_FILE) -> dict:
     If the file doesn't exist, it creates a default template.
     """
     import copy
-    path = Path(path)
+    path = Path(path) if path else CONFIG_FILE
     if not path.exists():
         try:
             with open(path, "w", encoding="utf-8") as f:
