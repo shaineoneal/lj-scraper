@@ -10,7 +10,7 @@ import configargparse
 from playwright.async_api import async_playwright
 from rich.panel import Panel
 
-from .config import console, DEFAULT_USER_DATA_DIR, settings
+from .config import console, DEFAULT_USER_DATA_DIR, DEFAULT_SETTINGS, load_config
 from .browser import run_login_flow, launch_browser_with_fallback
 from .account_scraper import LiveJournalAccount
 from .photo_scraper import LiveJournalPhotoScraper
@@ -73,14 +73,13 @@ async def main_async():
                         help="Install missing Linux system dependencies for Playwright.")
 
     # Selective account scraping flags
-    parser.add_argument("--entries", type=str2bool, nargs="?", const=True, default=None, help="Scrape recent entries.")
-    parser.add_argument("--profile", type=str2bool, nargs="?", const=True, default=None, help="Scrape user profile.")
-    parser.add_argument("--tags", type=str2bool, nargs="?", const=True, default=None, help="Scrape tags.")
-    parser.add_argument("--userpics", type=str2bool, nargs="?", const=True, default=None, help="Scrape userpics.")
-    parser.add_argument("--vgifts", type=str2bool, nargs="?", const=True, default=None, help="Scrape virtual gifts.")
-    parser.add_argument("--memories", type=str2bool, nargs="?", const=True, default=None, help="Scrape memories.")
-    parser.add_argument("--photos", type=str2bool, nargs="?", const=True, default=None,
-                        help="Scrape photos (downloads metadata and photo albums).")
+    parser.add_argument("--entries", nargs="*", choices=["html", "pdf", "both", "none"], help="Scrape and download entries.")
+    parser.add_argument("--profile", nargs="*", choices=["html", "pdf", "both", "none"], help="Scrape and download profiles.")
+    parser.add_argument("--tags", nargs="*", choices=["html", "pdf", "both", "none"], help="Scrape and download tags.")
+    parser.add_argument("--userpics", nargs="*", choices=["html", "pdf", "both", "none"], help="Scrape and download userpics.")
+    parser.add_argument("--vgifts", nargs="*", choices=["html", "pdf", "both", "none"], help="Scrape and download vgifts.")
+    parser.add_argument("--memories", nargs="*", choices=["html", "pdf", "both", "none"], help="Scrape and download memories.")
+    parser.add_argument("--photos", nargs="*", choices=["html", "pdf", "both", "none"], help="Scrape and download photo albums and photos.")
 
     parser.add_argument("--max-memories", type=int, nargs="?", const=True, default=750,
                         help="Maximum number of memories to scrape (default: 750).")
@@ -126,6 +125,10 @@ async def main_async():
         await run_login_flow(user_data_dir)
         return
 
+    # Propagate resolved settings (including config file settings and CLI overrides) to the scraper module
+    from . import account_scraper
+    account_scraper.settings = settings
+
     target = settings.get("target")
     if not target:
         parser.print_help()
@@ -139,30 +142,74 @@ async def main_async():
         sys.exit(1)
 
     # Profile scraping options: respect selective flags if any are set on command line
-    cli_flags = ["--entries", "--profile", "--tags", "--userpics", "--vgifts", "--memories", "--photos"]
+    TASKS = ["entries", "profile", "tags", "userpics", "vgifts", "memories", "photos"]
+    
+    cli_flags = [f"--{task}" for task in TASKS]
     any_cli_flag = any(flag in sys.argv for flag in cli_flags)
-    if any_cli_flag:
-        options = {
-            "entries": "--entries" in sys.argv,
-            "profile": "--profile" in sys.argv,
-            "tags": "--tags" in sys.argv,
-            "userpics": "--userpics" in sys.argv,
-            "vgifts": "--vgifts" in sys.argv,
-            "memories": "--memories" in sys.argv,
-            "photos": "--photos" in sys.argv
-        }
-    else:
-        options = {
-            "entries": config.settings.get("entries", True),
-            "profile": config.settings.get("profile", True),
-            "tags": config.settings.get("tags", True),
-            "userpics": config.settings.get("userpics", True),
-            "vgifts": config.settings.get("vgifts", True),
-            "memories": config.settings.get("memories", True),
-            "photos": config.settings.get("photos", True)
-        }
 
-    console.print(f"[bold blue]Scraping options:[/bold blue] {options}")
+    options = {}
+    if any_cli_flag:
+        # If any task flag is set on the CLI, we only run tasks that are explicitly provided in sys.argv
+        for task in TASKS:
+            if f"--{task}" in sys.argv:
+                val = getattr(args, task)
+                if isinstance(val, list) and "none" in val:
+                    options[task] = False
+                elif isinstance(val, list) and val:
+                    # If formats are explicitly provided, override the save format for this task
+                    if "both" in val or ("html" in val and "pdf" in val):
+                        options[task] = "both"
+                    elif "html" in val:
+                        options[task] = "html"
+                    elif "pdf" in val:
+                        options[task] = "pdf"
+                    else:
+                        options[task] = False
+                else:
+                    # Task was passed without explicit formats, fall back to config settings format
+                    cfg_val = settings.get(task)
+                    if cfg_val in ("html", "pdf", "both"):
+                        options[task] = cfg_val
+                    else:
+                        options[task] = "both"
+            else:
+                options[task] = False
+    else:
+        # No task flags on CLI, so we resolve based on config file/defaults
+        for task in TASKS:
+            cfg_val = settings.get(task)
+            if cfg_val is None or cfg_val is False or cfg_val == "none" or cfg_val == ["none"]:
+                options[task] = False
+            elif cfg_val is True or cfg_val == "both" or cfg_val == ["both"]:
+                options[task] = "both"
+            elif cfg_val in ("html", "pdf"):
+                options[task] = cfg_val
+            elif isinstance(cfg_val, list):
+                if "both" in cfg_val or ("html" in cfg_val and "pdf" in cfg_val):
+                    options[task] = "both"
+                elif "html" in cfg_val:
+                    options[task] = "html"
+                elif "pdf" in cfg_val:
+                    options[task] = "pdf"
+                else:
+                    options[task] = False
+            else:
+                options[task] = "both"
+
+    from rich.table import Table
+    table = Table(show_header=True, header_style="bold magenta", box=None)
+    table.add_column("Component", style="bold cyan")
+    table.add_column("Status", justify="right")
+    table.add_column("Formats", justify="right", style="green")
+
+    for task in TASKS:
+        status = options.get(task)
+        if status is False:
+            table.add_row(task.capitalize(), "[red]Disabled[/red]", "-")
+        else:
+            table.add_row(task.capitalize(), "[green]Enabled[/green]", status.upper())
+
+    console.print(Panel(table, title="[bold blue]Scraping Configuration[/bold blue]", border_style="blue", expand=False))
     start_time = time.time()
     all_results = []
 
