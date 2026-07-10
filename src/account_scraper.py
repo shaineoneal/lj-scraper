@@ -215,7 +215,7 @@ class LiveJournalAccount:
     async def scrape_memories(self) -> dict:
         async def check(page, mem_count) -> bool:
             if mem_count is None or mem_count == 0:
-                return await check_for_memories(page)
+                return await check_for_memories(page, self.timeout * 1000)
             return True
 
         async def save(page, spinner, res):
@@ -226,7 +226,7 @@ class LiveJournalAccount:
 
         if self.mem_count > settings.get('max_memories', 750):
             console.print(
-                f"    [bold yellow]⚠[/bold yellow] [dim]Memory count ({self.mem_count}) exceeds max_memories, collecting the index and the first {settings.get('max_memories', 750)} memories...")
+                f"    [bold yellow]⚠[/bold yellow] [dim]Memory count ({self.mem_count}) exceeds max_memories, collecting the index and the first {settings.get('max_dl_memories')} memories...")
             self.mem_count = settings.get('max_dl_memories', 500)
         elif not self.mem_count:
             console.print(

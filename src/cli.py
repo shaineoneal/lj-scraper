@@ -252,9 +252,10 @@ async def main_async():
                 failed_users = [user for user in all_results if "failed" in user.results.values()]
                 if failed_users:
                     console.print("\n[bold yellow]=== Initiating Retry Pass for Failed Tasks ===[/bold yellow]")
-                    for user in failed_users:
-                        console.print(f"\n[bold magenta]► Retrying:[/bold magenta] {user.username}")
-                        await user.retry_failed()
+                    with console.status("[bold yellow]Retrying failed tasks...[/bold yellow]") as status:
+                        for user in failed_users:
+                            status.update(f"[bold magenta]► Retrying:[/bold magenta] {user.username}")
+                            await user.retry_failed(status=status)
 
             # 2. Process standalone album targets
             if album_targets:

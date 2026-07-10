@@ -7,35 +7,37 @@ from .config import console
 
 async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, args: list):
     """Tries to launch bundled Chromium, falling back to system Chrome/Chromium on failure."""
-    # 1. Try bundled Chromium first
-    try:
-        context = await p.chromium.launch_persistent_context(
-            user_data_dir=user_data_dir,
-            headless=headless,
-            args=args,
-            ignore_https_errors=True
-        )
-        return context
-    except Exception as e:
-        import sys
-        if getattr(sys, 'frozen', False):
-            console.print("[yellow]Bundled Chromium failed to launch (possibly due to missing Linux OS dependencies).[/yellow]")
-        else:
-            console.print(f"[yellow]Default Chromium launch failed: {e}[/yellow]")
-            
-    # 2. Try system Google Chrome
-    try:
-        console.print("[blue]Attempting to launch system-installed Google Chrome...[/blue]")
-        context = await p.chromium.launch_persistent_context(
-            user_data_dir=user_data_dir,
-            headless=headless,
-            channel="chrome",
-            args=args,
-            ignore_https_errors=True
-        )
-        return context
-    except Exception as e:
-        pass
+    with console.status("[bold blue]Launching browser...[/bold blue]", spinner="dots") as status:
+        # 1. Try bundled Chromium first
+        try:
+            status.update("[bold blue]Launching bundled Chromium...[/bold blue]")
+            context = await p.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                headless=headless,
+                args=args,
+                ignore_https_errors=True
+            )
+            return context
+        except Exception as e:
+            import sys
+            if getattr(sys, 'frozen', False):
+                console.print("[yellow]Bundled Chromium failed to launch (possibly due to missing Linux OS dependencies).[/yellow]")
+            else:
+                console.print(f"[yellow]Default Chromium launch failed: {e}[/yellow]")
+
+        # 2. Try system Google Chrome
+        try:
+            status.update("[bold blue]Launching system-installed Google Chrome...[/bold blue]")
+            context = await p.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                headless=headless,
+                channel="chrome",
+                args=args,
+                ignore_https_errors=True
+            )
+            return context
+        except Exception as e:
+            pass
 
     # 3. Try system Chromium
     try:

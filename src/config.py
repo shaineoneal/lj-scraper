@@ -12,16 +12,17 @@ DEFAULT_SETTINGS = {
     "target": "",
     "user_data_dir": "user_profile",
     "max_memories": 750,
+    "max_dl_memories": 500,
     "login": False,
     "headed": False,
     "delay": None,
-    "entries": True,
-    "profile": True,
-    "tags": True,
-    "userpics": True,
-    "vgifts": True,
-    "memories": True,
-    "photos": True
+    "entries": "both",
+    "profile": "both",
+    "tags": "both",
+    "userpics": "both",
+    "vgifts": "both",
+    "memories": "both",
+    "photos": "both"
 }
 
 def deep_merge(dict1: dict, dict2: dict) -> dict:

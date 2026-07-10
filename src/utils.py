@@ -123,7 +123,7 @@ async def scroll_with_keyboard(page: Page, status, mem_count: int):
 
     while not await no_more_entries.is_visible() and entry_count < mem_count:
         await page.keyboard.down("End")
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(3000)
         await page.keyboard.up("End")
 
         current_count = len(await page.locator('.b-lenta-body > article').all())
@@ -255,7 +255,7 @@ async def get_account_type(page: Page) -> str:
             return "community"
     except Exception:
         console.print("[bold yellow]Could not determine account type.[/bold yellow]")
-        return None
+        return ""
 
 async def get_logged_in(page) -> str:
     """Checks if the user is logged in."""
