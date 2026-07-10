@@ -24,31 +24,39 @@ DEFAULT_SETTINGS = {
     "photos": True
 }
 
-def load_config() -> dict:
-    """Loads configuration from scraper_config.json in the current working directory.
+def deep_merge(dict1: dict, dict2: dict) -> dict:
+    """Recursively merges dict2 into dict1."""
+    for key, value in dict2.items():
+        if isinstance(value, dict) and key in dict1 and isinstance(dict1[key], dict):
+            deep_merge(dict1[key], value)
+        else:
+            dict1[key] = value
+    return dict1
+
+def load_config(path: Path = CONFIG_FILE) -> dict:
+    """Loads configuration from config file.
     If the file doesn't exist, it creates a default template.
     """
-    if not CONFIG_FILE.exists():
+    import copy
+    path = Path(path)
+    if not path.exists():
         try:
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 json.dump(DEFAULT_SETTINGS, f, indent=4)
         except Exception as e:
             console.print(f"[bold yellow]Warning: Could not create default config file: {e}[/bold yellow]")
-        return DEFAULT_SETTINGS
+        return copy.deepcopy(DEFAULT_SETTINGS)
 
     try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             user_config = json.load(f)
             # Merge with defaults to ensure all keys are present
-            merged = DEFAULT_SETTINGS.copy()
-            merged.update(user_config)
+            merged = copy.deepcopy(DEFAULT_SETTINGS)
+            deep_merge(merged, user_config)
             return merged
     except Exception as e:
-        console.print(f"[bold red]Warning: Failed to parse {CONFIG_FILE}, using defaults: {e}[/bold red]")
-        return DEFAULT_SETTINGS
-
-# Loaded settings dict
-settings = load_config()
+        console.print(f"[bold red]Warning: Failed to parse {path}, using defaults: {e}[/bold red]")
+        return copy.deepcopy(DEFAULT_SETTINGS)
 
 USER_DATA_ENV = "USER_DATA_DIR"
 DEFAULT_USER_DATA_DIR = "user_profile"
