@@ -197,7 +197,7 @@ class LiveJournalAccount:
     async def scrape_memories(self) -> dict:
         async def check(page, mem_count) -> bool:
             if mem_count is None or mem_count == 0:
-                return await check_for_memories(page)
+                return await check_for_memories(page, timeout=(self.timeout*1000))
             return True
 
         async def save(page, spinner, res):
