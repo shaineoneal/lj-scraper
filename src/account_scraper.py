@@ -44,7 +44,7 @@ class LiveJournalAccount:
         self.base_url = f"https://users.livejournal.com/{clean_username}"
         self.urls = {
             "entries": self.base_url,
-            "profile": f"{self.base_url}/profile",
+            "profile": f"{self.base_url}{URL_SUFFIX['profile']}",
             "tags": f"{self.base_url}{URL_SUFFIX['tags']}",
             "userpics": f"https://www.livejournal.com/allpics.bml?user={clean_username}",
             "vgifts": f"https://www.livejournal.com/manage/vgift.bml?u={clean_username}",
@@ -215,7 +215,7 @@ class LiveJournalAccount:
     async def scrape_memories(self) -> dict:
         async def check(page, mem_count) -> bool:
             if mem_count is None or mem_count == 0:
-                return await check_for_memories(page, self.timeout * 1000)
+                return await check_for_memories(page, timeout=(self.timeout*1000))
             return True
 
         async def save(page, spinner, res):

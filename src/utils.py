@@ -114,19 +114,61 @@ async def download_html(page: Page, save_path: str):
     Path(save_path).write_text(await page.content(), encoding="utf-8")
 
 async def scroll_with_keyboard(page: Page, status, mem_count: int):
-    """Scrolls down using End key to load all dynamic content/entries."""
-    no_more_entries = page.get_by_text("No more entries")
+    """Scrolls down using the lazyloader/footer or keyboard to load all dynamic content/entries."""
+    no_more_entries = page.locator(".b-lenta-emptiness")
     target = mem_count if mem_count and mem_count != "0" else "unknown"
 
     status.update(f"[bold blue]Scrolling...[/bold blue][dim] Target: [/dim][blue]{target}[/blue]")
     entry_count = len(await page.locator('.b-lenta-body > article').all())
 
     while not await no_more_entries.is_visible() and entry_count < mem_count:
-        await page.keyboard.down("End")
-        await page.wait_for_timeout(3000)
-        await page.keyboard.up("End")
+        # Define candidate elements that represent the bottom of the active content or the loader itself.
+        # We scroll these into view so they are visible on screen, triggering the lazyloader,
+        # without scrolling past them into the blank whitespace at the very end of the page.
+        loader = page.locator('.b-lenta-loader').last
+        footer = page.locator('.b-lenta-footer').last
+        last_article = page.locator('.b-lenta-body > article').last
+
+        scrolled = False
+        # Try scrolling the loader container into view
+        if await loader.count() > 0:
+            try:
+                await loader.scroll_into_view_if_needed(timeout=1000)
+                scrolled = True
+            except Exception:
+                pass
+        
+        # If loader scroll didn't work or isn't present, try the footer
+        if not scrolled and await footer.count() > 0:
+            try:
+                await footer.scroll_into_view_if_needed(timeout=1000)
+                scrolled = True
+            except Exception:
+                pass
+
+        # If footer scroll didn't work or isn't present, try the last loaded article
+        if not scrolled and await last_article.count() > 0:
+            try:
+                await last_article.scroll_into_view_if_needed(timeout=1000)
+                scrolled = True
+            except Exception:
+                pass
+
+        # Fallback: if we couldn't find/scroll those elements, use PageDown or scroll down step-by-step
+        if not scrolled:
+            await page.keyboard.press("PageDown")
+
+        await page.wait_for_timeout(2000)
 
         current_count = len(await page.locator('.b-lenta-body > article').all())
+        
+        # If the count didn't change, try a PageDown press as an extra kick to make sure
+        # the lazy loader triggers (in case scroll_into_view_if_needed aligned it slightly off screen)
+        if current_count == entry_count:
+            await page.keyboard.press("PageDown")
+            await page.wait_for_timeout(1000)
+            current_count = len(await page.locator('.b-lenta-body > article').all())
+
         if current_count != entry_count:
             entry_count = current_count
             loaded_str = f"{current_count}/{target}" if mem_count else str(current_count)
