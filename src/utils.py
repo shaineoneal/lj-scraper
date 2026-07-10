@@ -297,7 +297,7 @@ async def get_account_type(page: Page) -> str:
             return "community"
     except Exception:
         console.print("[bold yellow]Could not determine account type.[/bold yellow]")
-        return None
+        return ""
 
 async def get_logged_in(page) -> str:
     """Checks if the user is logged in."""

@@ -87,8 +87,18 @@ lj-scraper targets.txt
 ## CLI Reference & Flags
 
 ```text
-usage: lj-scraper [-h] [--user-data-dir USER_DATA_DIR] [--login] [--headed] [--delay DELAY]
-                  [--entries] [--profile] [--tags] [--userpics] [--vgifts] [--memories] [--photos]
+usage: lj-scraper [-h] [--config CONFIG] [--user-data-dir USER_DATA_DIR]
+                  [--login [LOGIN]] [--headed [HEADED]] [--headless]
+                  [--delay DELAY] [--install-deps [INSTALL_DEPS]]
+                  [--entries [{html,pdf,both,none} ...]]
+                  [--profile [{html,pdf,both,none} ...]]
+                  [--tags [{html,pdf,both,none} ...]]
+                  [--userpics [{html,pdf,both,none} ...]]
+                  [--vgifts [{html,pdf,both,none} ...]]
+                  [--memories [{html,pdf,both,none} ...]]
+                  [--photos [{html,pdf,both,none} ...]]
+                  [--max-memories [MAX_MEMORIES]]
+                  [--max-dl-memories [MAX_DL_MEMORIES]]
                   [target]
 
 Scrape and download LiveJournal accounts and photo albums.
@@ -98,28 +108,53 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+  --config CONFIG       Path to a JSON config file to load settings from (default: config.json).
   --user-data-dir USER_DATA_DIR
                         Directory for browser session data (default: read from USER_DATA_DIR env var or 'user_profile')
-  --login               Launch browser to log in and save session credentials.
-  --headed              Run browser in headed mode (visible window).
+  --login [LOGIN]       Launch browser to log in manually and save session credentials.
+  --headed [HEADED]     Run browser in headed mode (visible window).
+  --headless            Run browser in headless mode.
   --delay DELAY         Time in seconds to wait before page actions or downloads (default: 0.0)
+  --install-deps [INSTALL_DEPS]
+                        Install missing Linux system dependencies for Playwright.
+  --max-memories [MAX_MEMORIES]
+                        Maximum number of memories to scrape (default: 750).
+  --max-dl-memories [MAX_DL_MEMORIES]
+                        Maximum number of memories to download (default: 500).
 
 Selective profile scraping flags:
   If none of these are selected, the tool scrapes all components by default.
-  --entries             Scrape recent entries
-  --profile             Scrape user profile
-  --tags                Scrape tags
-  --userpics            Scrape userpics
-  --vgifts              Scrape virtual gifts
-  --memories            Scrape memories
-  --photos              Scrape photos (downloads metadata and photo albums)
+  If any are selected, only the specified components are scraped.
+  Optional format values: 'html', 'pdf', 'both', or 'none'. If a format is set,
+  other formats are turned off (e.g., '--entries pdf' saves PDF only).
+  If no format argument is specified (e.g. '--entries'), all configured formats run.
+
+  --entries [{html,pdf,both,none} ...]
+                        Scrape and download entries.
+  --profile [{html,pdf,both,none} ...]
+                        Scrape and download user profile.
+  --tags [{html,pdf,both,none} ...]
+                        Scrape and download tags.
+  --userpics [{html,pdf,both,none} ...]
+                        Scrape and download userpics.
+  --vgifts [{html,pdf,both,none} ...]
+                        Scrape and download virtual gifts.
+  --memories [{html,pdf,both,none} ...]
+                        Scrape and download memories.
+  --photos [{html,pdf,both,none} ...]
+                        Scrape and download photo albums and photos.
 ```
 
 ### Examples
 
-* **Only scrape profile metadata and tags in headed mode (visible browser window):**
+* **Only scrape profile metadata (both HTML and PDF) and entries (PDF only):**
   ```bash
-  lj-scraper username --profile --tags --headed
+  lj-scraper username --profile --entries pdf
+  ```
+
+* **Only scrape tags in HTML format:**
+  ```bash
+  lj-scraper username --tags html
   ```
 
 * **Run a slow scrape with a 1.5-second delay to avoid rate-limiting:**

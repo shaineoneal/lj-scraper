@@ -3,7 +3,8 @@ from os import mkdir
 from pathlib import Path
 from playwright.async_api import Page, Error as PlaywrightError
 from rich.spinner import Spinner
-from .config import console, URL_SUFFIX, settings
+
+from .config import console, URL_SUFFIX, load_config
 from .utils import (
     initialize_spinner,
     download_pdf,
@@ -18,6 +19,8 @@ from .utils import (
     get_account_type,
     get_logged_in
 )
+
+settings = load_config()
 
 class LiveJournalAccount:
     """Represents a LiveJournal user and manages their specific scraping tasks."""
@@ -135,16 +138,31 @@ class LiveJournalAccount:
         """Helper to download both HTML and PDF, compress the PDF, and update results."""
         save_path = self.user_dir / filename
 
-        try:
-            spinner.update("[bold blue]Downloading HTML...[/bold blue]")
-            await download_html(page, f"{save_path}.html")
-            res["html"] = True
+        # Determine what to save for this task
+        task_option = self.options.get(task_name)
+        if task_option is False or task_option is None:
+            console.print(f"    [bold yellow]⚠[/bold yellow] [dim]Skipping saving assets for {task_name} (disabled).[/dim]")
+            return
 
-            spinner.update("[bold blue]Downloading PDF...[/bold blue]")
-            if await download_pdf(page, f"{save_path}.pdf"):
-                res["pdf"] = True
-                spinner.update("[bold blue]Compressing PDF...[/bold blue]")
-                await compress_pdf(f"{save_path}.pdf")
+        save_html = task_option in ("html", "both")
+        save_pdf = task_option in ("pdf", "both")
+
+        if not save_html and not save_pdf:
+            console.print(f"    [bold yellow]⚠[/bold yellow] [dim]Skipping saving assets for {task_name} (no formats enabled).[/dim]")
+            return
+
+        try:
+            if save_html:
+                spinner.update("[bold blue]Downloading HTML...[/bold blue]")
+                await download_html(page, f"{save_path}.html")
+                res["html"] = True
+
+            if save_pdf:
+                spinner.update("[bold blue]Downloading PDF...[/bold blue]")
+                if await download_pdf(page, f"{save_path}.pdf"):
+                    res["pdf"] = True
+                    spinner.update("[bold blue]Compressing PDF...[/bold blue]")
+                    await compress_pdf(f"{save_path}.pdf")
         except Exception as e:
             console.print(f"    [bold red]✗[/bold red] [dim]Error saving assets for {task_name}:[/dim] {e}")
 
@@ -208,7 +226,7 @@ class LiveJournalAccount:
 
         if self.mem_count > settings.get('max_memories', 750):
             console.print(
-                f"    [bold yellow]⚠[/bold yellow] [dim]Memory count ({self.mem_count}) exceeds max_memories, collecting the index and the first {settings.get('max_memories', 750)} memories...")
+                f"    [bold yellow]⚠[/bold yellow] [dim]Memory count ({self.mem_count}) exceeds max_memories, collecting the index and the first {settings.get('max_dl_memories')} memories...")
             self.mem_count = settings.get('max_dl_memories', 500)
         elif not self.mem_count:
             console.print(
