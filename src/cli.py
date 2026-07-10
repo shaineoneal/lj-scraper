@@ -89,17 +89,18 @@ async def main_async():
 
     args = parser.parse_args()
 
+    settings = load_config(args.config)
+
     # Sync parsed args back into config.settings
-    from . import config
-    config.settings.update({k: v for k, v in vars(args).items() if v is not None})
+    settings.update({k: v for k, v in vars(args).items() if v is not None})
 
     # Resolve target
     target = args.target or args.target_opt
     if target:
-        config.settings["target"] = target
+        settings["target"] = target
 
     # Resolve settings / args
-    install_deps = config.settings.get("install_deps", False)
+    install_deps = settings.get("install_deps", False)
     if install_deps:
         console.print("[bold blue]Installing missing Linux system dependencies for Playwright...[/bold blue]")
         import playwright.__main__
@@ -117,15 +118,15 @@ async def main_async():
         return
 
     # Determine user data directory
-    user_data_dir = config.settings.get("user_data_dir") or os.environ.get("USER_DATA_DIR") or "user_profile"
+    user_data_dir = settings.get("user_data_dir") or os.environ.get("USER_DATA_DIR") or "user_profile"
     os.environ["USER_DATA_DIR"] = user_data_dir
 
-    login = config.settings.get("login", False)
+    login = settings.get("login", False)
     if login:
         await run_login_flow(user_data_dir)
         return
 
-    target = config.settings.get("target")
+    target = settings.get("target")
     if not target:
         parser.print_help()
         return
@@ -176,9 +177,9 @@ async def main_async():
     headless = not headed
 
     # Resolve delay setting
-    delay = config.settings.get("delay")
+    delay = settings.get("delay")
     if delay is None:
-        delay = config.settings.get("default_delay", 0.0)
+        delay = settings.get("default_delay", 0.0)
 
     async with async_playwright() as p:
         console.print(
