@@ -24,6 +24,8 @@ settings = load_config()
 
 class LiveJournalAccount:
     """Represents a LiveJournal user and manages their specific scraping tasks."""
+    has_checked_login = False
+    logged_in_user = None
 
     def __init__(self, context, username: str, options: dict, delay: float = 7.5, status=None):
         self.context = context
@@ -75,9 +77,7 @@ class LiveJournalAccount:
 
         while attempt < max_attempts:
             try:
-                msg = f"[bold blue]Navigating to {url}... (Attempt {attempt + 1})[/bold blue]"
-                if status_or_spinner:
-                    status_or_spinner.update(msg, spinner="earth")
+                status_or_spinner.update(f"[bold blue]Navigating to {url} (Attempt {attempt + 1}/{max_attempts})...[/bold blue]", spinner="dots")
 
                 page = await self.context.new_page()
                 page.set_default_timeout(timeout_ms)
@@ -112,7 +112,7 @@ class LiveJournalAccount:
         result = {"html": False, "pdf": False, "success": False, "error": None}
         url = self.urls[task_name]
         page = None
-        async with initialize_spinner(f"Preparing to scrape {label}...", status=self.status) as spinner:
+        async with initialize_spinner(f"Preparing to scrape {label}...", status=self.status, spinner_type="dots") as spinner:
             try:
                 page = await self._fetch_page(url, status_or_spinner=spinner)
                 spinner.update("[bold blue]Checking if page exists...[/bold blue]", spinner="dots")
@@ -176,7 +176,7 @@ class LiveJournalAccount:
             title = await page.title()
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             safe_title = safe_title or f"{self.username} - Recent Entries"
-            
+
             await self._save_page_assets(page, spinner, "entries", safe_title, res)
 
         return await self._scrape_task("entries", "recent entries", save_fn=save)
@@ -306,11 +306,14 @@ class LiveJournalAccount:
         Extracts user information from the page.
         """
         try:
-            logged_in = await get_logged_in(page)
-            if logged_in:
-                console.print(f"    [bold green]✓[/bold green] [dim]Logged in as {logged_in}[/dim]")
-            else:
-                console.print(f"    [bold yellow]⚠[/bold yellow] [dim]Not logged in! Some content may be restricted.[/dim]")
+            if not LiveJournalAccount.has_checked_login:
+                LiveJournalAccount.has_checked_login = True
+                LiveJournalAccount.logged_in_user = await get_logged_in(page)
+                if LiveJournalAccount.logged_in_user:
+                    console.print(f"    [bold green]✓[/bold green] [dim]Logged in as {LiveJournalAccount.logged_in_user}[/dim]")
+                else:
+                    console.print(f"    [bold yellow]⚠[/bold yellow] [dim]Not logged in! Some content may be restricted.[/dim]")
+            
             account_type = await get_account_type(page)
             if account_type is not None:
                 if account_type == "personal":
