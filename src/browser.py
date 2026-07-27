@@ -41,7 +41,7 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
 
     # 3. Try system Chromium
     try:
-        console.print("[blue]Attempting to launch system-installed Chromium...[/blue]")
+        status.update("[blue]Attempting to launch system-installed Chromium...[/blue]")
         context = await p.chromium.launch_persistent_context(
             user_data_dir=user_data_dir,
             headless=headless,

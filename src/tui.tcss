@@ -1,0 +1,170 @@
+/* Layout and panels */
+#sidebar {
+    border: heavy $primary;
+    border-title-align: left;
+    border-title-style: bold;
+    padding: 1 2;
+    margin: 1;
+}
+
+#main_layout {
+    layout: grid;
+    grid-size: 2;
+    grid-columns: 1fr 2fr;
+    height: 1fr;
+}
+
+#log_container {
+    padding: 1 2;
+    height: 1fr;
+}
+
+#status_panel {
+    height: auto;
+    padding: 1 2;
+    border-top: tall $panel;
+}
+
+.container {
+    height: auto;
+    width: auto;
+}
+
+/* Controls and buttons */
+#buttons_row {
+    height: 3;
+    align: center middle;
+    layout: horizontal;
+}
+
+Button {
+    margin: 0 1;
+}
+
+#headless-switch {
+    height: auto;
+    width: auto;
+}
+
+.task-container {
+    height: 2;
+}
+
+/* Results and progress */
+#results_table {
+    display: none;
+    height: 12;
+    margin-top: 1;
+}
+
+#format-selection {
+    height: auto;
+    align: center top;
+    keyline: thin $panel-lighten-2;
+}
+
+#html-col, #pdf-col {
+    height: auto;
+    width: 30;
+    margin: 1 1;
+    padding: 0;
+}
+
+#html-col > .title,
+#pdf-col > .title {
+    padding-top: 1;
+    width: 100%;
+    text-align: center;
+    text-style: bold;
+}
+
+#html-selection,
+#pdf-selection {
+    border: transparent;
+    background: transparent;
+    width: 30;
+    align: center middle;
+}
+
+#progress_spinner {
+    height: 1;
+}
+
+#progress_container {
+    height: auto;
+}
+
+SpinnerWidget {
+    height: 1;
+    width: 2;
+}
+
+/* Inputs and form fields */
+#target-input-container {
+    height: auto;
+    border: round $panel-lighten-2;
+    margin-right: 1;
+    width: 100%
+}
+
+#target {
+    width: 100%;
+    margin: 1;
+}
+
+#advanced-options Horizontal{
+    height: auto;
+    margin-right: 1;
+    margin-bottom: 1;
+}
+
+#advanced-options Input {
+    background: $background;
+}
+
+Rule {
+    color: $text-muted;
+    margin: 0;
+    align: center middle;
+}
+
+Input {
+    width: auto;
+    padding: 0 1;
+}
+
+Input.number {
+    max-width: 10;
+    padding: 0 1;
+}
+
+Input.integer {
+    max-width: 6;
+    padding: 0 1;
+}
+
+Switch {
+    border: none;
+    padding: 0;
+}
+
+Switch > .switch--slider {
+    background: $panel-darken-1;
+}
+
+Switch.-on > .switch--slider {
+    color: $success-darken-1;
+}
+
+Collapsible {
+    margin: 0;
+    width: 100%;
+    margin-right: 2;
+}
+
+
+
+TabbedContainer {
+    height: 1fr;
+    width: auto;
+}

@@ -1,17 +1,17 @@
 # LiveJournal Scraper
 
-A robust, modular command-line tool built on Playwright to scrape and archive LiveJournal profiles, entries, tags, userpics, virtual gifts, memories, and photo albums. It exports web pages as both raw HTML files and compressed, print-ready PDFs.
+A robust, modular tool built on Playwright and Textual to scrape and archive LiveJournal profiles, entries, tags, userpics, virtual gifts, memories, and photo albums. It features a beautiful, interactive Terminal User Interface (TUI) to easily configure, run, and monitor backups.
 
 ## Features
 
+- **Interactive Terminal User Interface (TUI)**: Built with `textual` to offer a premium, side-by-side view with a configuration form on the left and live logs/progress updates on the right.
 - **Full Profile Backups**: Automatically archives user profile pages, tags, memories, virtual gifts, and userpics.
-- **Entries & Comments**: Scrolls and captures recent entries dynamically.
+- **Entries & Comments**: Captures recent entries dynamically.
 - **Photo Album Archiving**: Recursively crawls photo albums, saving high-resolution images locally along with a PDF of the album grid.
 - **HTML & PDF Formats**: Saves pages in both raw HTML and optimized, compressed PDF formats (using PyMuPDF compression).
-- **Session Preservation (Login Flow)**: Includes a login utility to save browser cookies/sessions, allowing you to scrape private, locked, or friends-only posts.
-- **Batch Processing**: Accepts profile URLs, usernames, album URLs, or a `.txt` file containing a mix of all targets.
+- **Session Preservation (Login Flow)**: Includes a login utility within the TUI to save browser cookies/sessions, allowing you to scrape private, locked, or friends-only posts.
+- **CLI Pre-population**: Pre-populates the TUI fields based on configuration files or command-line arguments for fast workflows.
 - **Graceful Retries**: Automatically retries failed page loads or timeouts.
-- **Rich CLI**: Beautiful terminal outputs and tables courtesy of `rich`.
 
 ---
 
@@ -53,34 +53,33 @@ If you don't want to set up a Python environment, you can download the compiled 
 
 ## Quick Start & Usage
 
-Once installed, the CLI tool is registered as `lj-scraper`. You can also run it via python: `python lj_scraper.py`.
-
-### 1. Authenticating (Optional but recommended for locked posts)
-To access private profiles or friends-only entries, launch the login flow to authenticate. This will open a browser window for you to log in to LiveJournal and save the session credentials to your local user profile.
+Once installed, you can launch the interactive interface by running:
 ```bash
-lj-scraper --login
-```
-*(Use `--user-data-dir <path>` if you want to store credentials in a specific folder).*
-
-### 2. Scraping Profiles
-To scrape everything (profile, entries, tags, memories, gifts, and photos) for a username or profile URL:
-```bash
-lj-scraper username
+lj-scraper
 # or
-lj-scraper https://username.livejournal.com
+python lj_scraper.py
 ```
+This opens the beautiful interactive Terminal User Interface (TUI). You can configure your target, output directories, formats, and start the scraper directly inside your terminal.
 
-### 3. Scraping Standalone Photo Albums
-To download photos from a specific album:
-```bash
-lj-scraper https://username.livejournal.com/photo/album/12345
-```
+### Pre-populating TUI fields
+You can pass command-line arguments to pre-fill settings in the TUI:
 
-### 4. Batch Scraping from a Text File
-You can provide a text file containing a list of usernames, profile URLs, or photo album URLs (one per line):
-```bash
-lj-scraper targets.txt
-```
+1. **Pre-populate a target**:
+   ```bash
+   lj-scraper username
+   # or
+   lj-scraper https://username.livejournal.com
+   ```
+2. **Pre-populate custom user data directory**:
+   ```bash
+   lj-scraper --user-data-dir custom_folder
+   ```
+3. **Pre-populate format configuration**:
+   ```bash
+   lj-scraper username --entries pdf --profile html
+   ```
+
+Within the interface, click **Start Scraping** to run the scraping processes, **Run Login Flow** to authenticate (headed window is opened for login), or **Install Linux Deps** to download system dependencies if running on Linux.
 
 ---
 
