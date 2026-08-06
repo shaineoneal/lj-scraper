@@ -129,7 +129,7 @@ async def main_async():
     from . import account_scraper
     account_scraper.settings = settings
 
-    target = settings.get("target")
+    target = args.target or settings.get("target")
     if not target:
         parser.print_help()
         return

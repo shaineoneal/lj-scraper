@@ -18,11 +18,13 @@ dependencies = [
     "playwright>=1.40.0",
     "PyMuPDF>=1.23.0",
     "rich>=13.0.0",
-    "configargparse>=1.5.0"
+    "configargparse>=1.5.0",
+    "openpyxl"
 ]
 
 [project.scripts]
 lj-scraper = "src.cli:main"
+lj-save-posts = "src.save_posts:main_cli"
 
 [tool.setuptools.packages.find]
 where = ["."]
