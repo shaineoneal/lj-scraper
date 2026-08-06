@@ -124,6 +124,12 @@ def main():
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:
+        console.print("\n[bold red]Operation cancelled by user.[/bold red]")
         sys.exit(0)
     except Exception as e:
-        sys.exit(1)
+        if "AuthenticationError" in type(e).__name__:
+            console.print(f"\n[bold red]❌ Error: Unable to download private photos. {e}[/bold red]")
+            console.print(
+                "[bold red]Please run 'lj-scraper --login' to authenticate first, or check your login session.[/bold red]")
+            sys.exit(1)
+        raise e
