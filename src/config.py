@@ -25,16 +25,7 @@ DEFAULT_SETTINGS = {
     "photos": "both"
 }
 
-def deep_merge(dict1: dict, dict2: dict) -> dict:
-    """Recursively merges dict2 into dict1."""
-    for key, value in dict2.items():
-        if isinstance(value, dict) and key in dict1 and isinstance(dict1[key], dict):
-            deep_merge(dict1[key], value)
-        else:
-            dict1[key] = value
-    return dict1
-
-def load_config(path: Path = CONFIG_FILE) -> dict:
+def load_config(path: Path = CONFIG_FILE) -> dict[str, str | bool]:
     """Loads configuration from config file.
     If the file doesn't exist, it creates a default template.
     """
@@ -46,18 +37,17 @@ def load_config(path: Path = CONFIG_FILE) -> dict:
                 json.dump(DEFAULT_SETTINGS, f, indent=4)
         except Exception as e:
             console.print(f"[bold yellow]Warning: Could not create default config file: {e}[/bold yellow]")
-        return copy.deepcopy(DEFAULT_SETTINGS)
+        return {**DEFAULT_SETTINGS}
 
     try:
         with open(path, "r", encoding="utf-8") as f:
             user_config = json.load(f)
             # Merge with defaults to ensure all keys are present
-            merged = copy.deepcopy(DEFAULT_SETTINGS)
-            deep_merge(merged, user_config)
+            merged = {**DEFAULT_SETTINGS, **user_config}
             return merged
     except Exception as e:
         console.print(f"[bold red]Warning: Failed to parse {path}, using defaults: {e}[/bold red]")
-        return copy.deepcopy(DEFAULT_SETTINGS)
+        return {**DEFAULT_SETTINGS}
 
 USER_DATA_ENV = "USER_DATA_DIR"
 DEFAULT_USER_DATA_DIR = "user_profile"

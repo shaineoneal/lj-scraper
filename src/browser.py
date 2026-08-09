@@ -39,19 +39,19 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
         except Exception as e:
             pass
 
-    # 3. Try system Chromium
-    try:
-        console.print("[blue]Attempting to launch system-installed Chromium...[/blue]")
-        context = await p.chromium.launch_persistent_context(
-            user_data_dir=user_data_dir,
-            headless=headless,
-            channel="chromium",
-            args=args,
-            ignore_https_errors=True
-        )
-        return context
-    except Exception as e:
-        pass
+        # 3. Try system Chromium
+        try:
+            status.update("[blue]Attempting to launch system-installed Chromium...[/blue]")
+            context = await p.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                headless=headless,
+                channel="chromium",
+                args=args,
+                ignore_https_errors=True
+            )
+            return context
+        except Exception as e:
+            pass
 
     # 4. If all fail, print troubleshooting options
     console.print("\n[bold red]❌ Browser launch failed completely.[/bold red]")
