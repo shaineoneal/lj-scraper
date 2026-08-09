@@ -1,3 +1,4 @@
+import inspect
 import os
 import sys
 import asyncio
@@ -7,15 +8,22 @@ from playwright.async_api import async_playwright
 from rich.console import RenderableType
 from rich.spinner import Spinner
 from rich.text import Text
+from textual import on, work
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll, Right, Grid
+from textual.events import Click
+from textual.reactive import reactive
 from textual.widgets import Header, Footer, Input, Button, Switch, Select, Label, RichLog, ProgressBar, Static, \
-    DataTable, SelectionList, LoadingIndicator, Rule, Collapsible, OptionList, Checkbox, TabbedContent, TabPane
+    DataTable, SelectionList, LoadingIndicator, Rule, Collapsible, OptionList, Checkbox, TabbedContent, TabPane, \
+    tabbed_content
+
+from textual_fspicker import FileOpen
 
 import src.config
 import rich.progress
 
+from .save_posts import main_async
 from .browser import run_login_flow, launch_browser_with_fallback
 from .account_scraper import LiveJournalAccount
 from .photo_scraper import LiveJournalPhotoScraper
@@ -33,20 +41,6 @@ class SpinnerWidget(Static):
 
     def render(self):
         return self.spinner
-# These classes mock rich.console.status and rich.progress.Progress.
-# We intercept the scraper's native CLI prints/spinners and reroute them 
-# to our Textual widgets, keeping the scraper decoupled from the GUI.
-class TUIProgress:
-    active_app = None
-    def __init__(self, *a, **k): self.app = TUIProgress.active_app
-    def __enter__(self): return self
-    def __exit__(self, *a): pass
-    def add_task(self, d, total=100):
-        if self.app: self.app._invoke(self.app.update_progress, d)
-        return "tui_task"
-    def update(self, tid, description=None, completed=None, total=None):
-        if self.app and description: self.app._invoke(self.app.update_progress, description)
-    def advance(self, tid, advance=1): pass
 
 class TextualStatus:
     def __init__(self, c, t, **k): self.c, self.t = c, t
@@ -59,6 +53,12 @@ class LiveJournalScraperApp(App):
     TITLE, SUBTITLE = "LiveJournal Scraper", "Backup your LiveJournal profile and photo albums"
     CSS_PATH = "tui.tcss"
     FORMAT_TASKS = ["entries", "profile", "tags", "userpics", "vgifts", "memories", "photos"]
+
+    shared_user_data_dir = reactive("user_profile")
+    shared_delay = reactive("0.0")
+    shared_max_memories = reactive("750")
+    shared_max_dl_memories = reactive("500")
+    shared_timeout = reactive("30.0")
 
     def __init__(self, initial_settings=None, **kwargs):
         super().__init__(**kwargs)
@@ -74,75 +74,112 @@ class LiveJournalScraperApp(App):
     def compose(self) -> ComposeResult:
         # compose() builds the widget tree once on startup to define the static layout hierarchy.
         yield Header()
-        with Container(id="main_layout"):
-            with TabbedContent(id="sidebar", initial="tab_extras"):
-                with TabPane("Extras", id="tab_extras"):
+        with Container(id="main-layout"):
+            with TabbedContent(id="sidebar", initial="tab-extras"):
+                with TabPane("Extras", id="tab-extras"):
                     with VerticalScroll():
-                        with Container(id="target-input-container"):
-                            yield Input(placeholder="e.g. news, target_list.txt", id="target")
-
-                        with Horizontal(classes="Run Headless Browser"):
+                        with Grid(id="target-input-container"):
+                            yield Input(placeholder="e.g. news, target_list.txt", id="extras-target")
+                            yield Button("🗀", id="btn-extras-files")
+                        with Horizontal(id="extras-headless-container"):
                             yield Label("Run Headless Browser")
                             yield Rule(line_style="ascii")
-                            yield Switch(value=True, id="headless_switch")
-                        yield Label("FORMAT SELECTION", classes="title")
-                        with Horizontal(id="format-selection"):
-                            with Vertical(id="html-col"):
-                                yield Label("DOWNLOAD HTML", classes="title html")
-                                yield SelectionList(*[(t.capitalize(), t, True) for t in self.FORMAT_TASKS], id="html-selection")
-                            with Vertical(id="pdf-col"):
-                                yield Label("DOWNLOAD PDF", classes="title pdf")
-                                yield SelectionList(*[(t.capitalize(), t, True) for t in self.FORMAT_TASKS], id="pdf-selection")
-                        with Collapsible(title="Advanced Options", id="advanced-options"):
-                            with Horizontal(id="user-data-dir-container"):
-                                yield Label("User Data Directory", id="user-data-dir-label")
-                                yield Rule(line_style="ascii")
-                                yield Input(placeholder="user_profile", id="user-data-dir", compact=True)
-                            with Horizontal(id="delay-max-container"):
-                                yield Label("Delay Between Requests (seconds)", id="delay-max-label")
-                                yield Rule(line_style="ascii")
-                                yield Input(placeholder="0.0", classes="number", compact=True, type="number", id="delay")
-                            with Horizontal(id="memory-max-container"):
-                                yield Label("Max Memories to Scrape / Download")
-                                yield Rule(line_style="ascii")
-                                yield Input(placeholder="750", classes="integer", compact=True, type="integer", id="max-memories")
-                                yield Label(" / ")
-                                yield Input(placeholder="500", classes="integer", compact=True,
-                                            type="integer", id="max-dl-memories")
-                with TabPane("Scraper", id="tab_scraper"):
-                    yield Label("SCRAPER", classes="title")
+                            yield Switch(value=True, id="extras-headless-switch")
+                        with Horizontal(id="memory-max-container"):
+                            yield Label("Max Memories to Scrape / Download")
+                            yield Rule(line_style="ascii")
+                            yield Input(placeholder="750", classes="integer", compact=True, type="integer",
+                                        id="max-memories")
+                            yield Label(" / ")
+                            yield Input(placeholder="500", classes="integer", compact=True,
+                                        type="integer", id="max-dl-memories")
+                        with Vertical(id='format-selection-container'):
+                            yield Label("FORMAT SELECTION", id='format-selection-label', classes="title")
+                            with Horizontal(id="format-selection"):
+                                with Vertical(id="html-col"):
+                                    yield Label("DOWNLOAD HTML", classes="title html")
+                                    yield SelectionList(*[(t.capitalize(), t, True) for t in self.FORMAT_TASKS],
+                                                        id="html-selection")
+                                with Vertical(id="pdf-col"):
+                                    yield Label("DOWNLOAD PDF", classes="title pdf")
+                                    yield SelectionList(*[(t.capitalize(), t, True) for t in self.FORMAT_TASKS],
+                                                        id="pdf-selection")
 
-            with Vertical(id="log_container"):
+                        with Collapsible(title="Advanced Options", id="extras-adv-options", collapsed=True):
+                            with Vertical(id="extras-adv-options-contents"):
+                                with Horizontal(id="extras-user-data-dir-container"):
+                                    yield Label("User Data Directory", id="extras-user-data-dir-label")
+                                    yield Rule(line_style="ascii")
+                                    yield Input(id="extras-user-data-dir", compact=True, value=self.shared_user_data_dir)
+                                with Horizontal(id="extras-delay-max-container"):
+                                    yield Label("Delay Between Requests (seconds)", id="extras-delay-max-label")
+                                    yield Rule(line_style="ascii")
+                                    yield Input(classes="number", compact=True, type="number", id="delay", value=self.shared_delay)
+
+                                with Horizontal(id="extras-timeout-container"):
+                                    yield Label("Request Timeout (seconds)", id="extras-timeout-label")
+                                    yield Rule(line_style="ascii")
+                                    yield Input(classes="number", compact=True, type="number", id="timeout",
+                                                value=self.shared_timeout)
+
+
+                with TabPane("Posts", id="tab-posts"):
+                    with VerticalScroll():
+                        with Container(id="target-input-container"):
+                            yield Input(placeholder="e.g. news, target_list.txt", id="posts-target")
+                            yield Button("🗀", classes="open-file-picker", id="btn-posts-files")
+                        with Horizontal(id="headless-container"):
+                            yield Label("Run Headless Browser")
+                            yield Rule(line_style="ascii")
+                            yield Switch(value=True, id="posts-headless-switch")
+
+                        with Collapsible(title="Advanced Options", id="posts-adv-options"):
+                            with Vertical(id="posts-adv-options-contents"):
+                                with Horizontal(id="posts-user-data-dir-container"):
+                                    yield Label("User Data Directory", id="posts-user-data-dir-label")
+                                    yield Rule(line_style="ascii")
+                                    yield Input(id="posts-user-data-dir", compact=True, value=self.shared_user_data_dir)
+                                with Horizontal(id="posts-delay-max-container"):
+                                    yield Label("Delay Between Requests (seconds)", id="posts-delay-max-label")
+                                    yield Rule(line_style="ascii")
+                                    yield Input(classes="number", compact=True, type="number", id="delay",
+                                                value=self.shared_delay)
+                                with Horizontal(id="posts-timeout-container"):
+                                    yield Label("Request Timeout (seconds)", id="posts-timeout-label")
+                                    yield Rule(line_style="ascii")
+                                    yield Input(classes="number", compact=True, type="number", id="timeout",
+                                                value=self.shared_timeout)
+            with Vertical(id="log-container"):
                 yield Label("EXECUTION LOGS", classes="title")
-                yield RichLog(highlight=True, markup=True, id="log_view")
-                yield DataTable(id="results_table", cursor_type="row", zebra_stripes=True, show_header=True, show_cursor=True, show_row_labels=False)
+                yield RichLog(highlight=False, markup=True, id="log-view")
+                yield DataTable(id="results-table", cursor_type="row", zebra_stripes=True, show_header=True, show_cursor=True, show_row_labels=False)
 
-        with Horizontal(id="status_panel"):
+        with Horizontal(id="status-panel"):
+            with Horizontal(id="progress-container") as pc:
 
-            with Horizontal(id="progress_container") as pc:
-
-                with SpinnerWidget(style="dots", id="progress_spinner") as sw:
+                with SpinnerWidget(style="dots", id="progress-spinner") as sw:
                     sw.visible = False
 
-                yield Label("Status: Ready", id="status_label")
+                yield Label("Status: Ready", id="status-label")
 
-        with Horizontal(id="buttons_row"):
-            yield Button("Start Scraping", variant="success", id="btn_start")
-            yield Button("Run Login Flow", variant="primary", id="btn_login")
-            yield Button("Install Linux Deps", variant="warning", id="btn_deps")
-            yield Button("Quit", variant="error", id="btn_quit")
+        with Horizontal(id="buttons-row"):
+            yield Button("Start Scraping Extras", variant="success", id="btn-extras")
+            yield Button("Start Scraping Posts", variant="success", id="btn-posts")
+            yield Button("Run Login Flow", variant="primary", id="btn-login")
+            yield Button("Install Linux Deps", variant="warning", id="btn-deps")
+            yield Button("Quit", variant="error", id="btn-quit")
 
         yield Footer()
 
     def on_mount(self) -> None:
         # on_mount() runs after the DOM is ready.
-        # We use this to monkey-patch the global rich Console instance so all 
+        # We use this to monkey-patch the global rich Console instance so all
         # `console.print` calls from the backend flow into our RichLog instead of stdout.
         sidebar = self.query_one("#sidebar")
         sidebar.border_title = "SCRAPER SETTINGS"
-        
+
         console_instance = src.config.console
-        log_view = self.query_one("#log_view", RichLog)
+        log_view = self.query_one("#log-view", RichLog)
 
         self._original_print = console_instance.print
         self._original_log = console_instance.log
@@ -157,13 +194,17 @@ class LiveJournalScraperApp(App):
 
         # Repopulate the inputs and selections from the saved initial_settings dict.
         s = self.initial_settings
-        self.query_one("#target", Input).value = s.get("target", "")
-        self.query_one("#target-input-container", Container).border_title = f"Target (Username, URL, or .txt file)"
-        self.query_one("#user-data-dir", Input).value = s.get("user_data_dir", "user_profile")
-        self.query_one("#delay", Input).value = str(s.get("delay", "0.0"))
-        self.query_one("#max-memories", Input).value = str(s.get("max_memories", 750))
-        self.query_one("#max-dl-memories", Input).value = str(s.get("max_dl_memories", 500))
-        self.query_one("#headless_switch", Switch).value = s.get("headless", not s.get("headed", False))
+        self.query_one("#extras-target", Input).value = s.get("target", "")
+        self.query_one("#target-input-container", Grid).border_title = f"Target (Username, URL, or .txt file)"
+        self.query_one("#extras-headless-switch", Switch).value = s.get("headless", not s.get("headed", False))
+        self.query_one("#btn-posts", Button).styles.display = "none"
+        self.query_one('#max-memories', Input).value = str(s.get("max_memories", "750"))
+        self.query_one('#max-dl-memories', Input).value = str(s.get("max_dl_memories", "500"))
+        self.shared_delay = str(s.get("delay", "0.0"))
+        self.shared_user_data_dir = s.get("user_data_dir", "user_profile")
+        self.shared_timeout = str(s.get("timeout", "30.0"))
+        self.shared_max_memories = str(s.get("max_memories", "750"))
+        self.shared_max_dl_memories = str(s.get("max_dl_memories", "500"))
 
         try:
             html_list = self.query_one("#html-selection", SelectionList)
@@ -171,15 +212,15 @@ class LiveJournalScraperApp(App):
             for task in self.FORMAT_TASKS:
                 val = s.get(task)
                 if val not in (["both"], ["html"], ["pdf"], ["none"]):
-                    log = self.query_one("#log_view", RichLog)
+                    log = self.query_one("#log-view", RichLog)
                     log.write(f"[bold yellow]Warning: Invalid value for {task}: {val}. Defaulting to ['both'].[/bold yellow]")
                     val = ["both"]
-                
+
                 if val in (["both"], ["html"]):
                     html_list.select(task)
                 else:
                     html_list.deselect(task)
-                    
+
                 if val in (["both"], ["pdf"]):
                     pdf_list.select(task)
                 else:
@@ -193,7 +234,7 @@ class LiveJournalScraperApp(App):
         if any(flag in sys.argv for flag in cli_flags):
             console_instance.print("[yellow]Notice: Command line arguments overrode config.json tasks.[/yellow]\n")
 
-        table = self.query_one("#results_table", DataTable)
+        table = self.query_one("#results-table", DataTable)
         table.add_columns("Status", "Account", "Entries", "Profile", "Tags", "Userpics", "Virtual Gifts", "Memories", "Photos")
 
     def on_unmount(self) -> None:
@@ -206,11 +247,43 @@ class LiveJournalScraperApp(App):
         if hasattr(console_instance, "update_status"): delattr(console_instance, "update_status")
         if getattr(self, "_old_progress", None): rich.progress.Progress = self._old_progress
 
+    @on(TabbedContent.TabActivated, pane='#tab-extras')
+    def display_extras_button(self) -> None:
+        posts_btn = self.query_one("#btn-posts", Button)
+        extras_btn = self.query_one("#btn-extras", Button)
+        posts_btn.styles.display = "none"
+        extras_btn.styles.display = "block"
+        extras_target = self.query_one("#extras-target", Input).value
+        posts_target = self.query_one("#posts-target", Input).value
+        if not extras_target and posts_target:
+            self.query_one("#extras-target", Input).value = posts_target
+
+
+    @on(TabbedContent.TabActivated, pane='#tab-posts')
+    def display_posts_button(self) -> None:
+        posts_btn = self.query_one("#btn-posts", Button)
+        extras_btn = self.query_one("#btn-extras", Button)
+        extras_btn.styles.display = "none"
+        posts_btn.styles.display = "block"
+        posts_target = self.query_one("#posts-target", Input).value
+        extras_target = self.query_one("#extras-target", Input).value
+        if not posts_target and extras_target:
+            self.query_one("#posts-target", Input).value = extras_target
+
+    @on(Input.Changed, "#extras-user-data-dir, #posts-user-data-dir")
+    def update_shared_user_data_dir(self, event: Input.Changed):
+        print(f"User data dir changed to: {event.input.id}")
+        self.shared_user_data_dir = event.value
+        if event.input.id == "extras-user-data-dir":
+            self.query_one("#posts-user-data-dir", Input).value = event.value
+        elif event.input.id == "posts-user-data-dir":
+            self.query_one("#extras-user-data-dir", Input).value = event.value
+
     def set_status(self, text: str):
-        self.query_one("#status_label", Label).update(f"Status: {text}" if text else "Status: Ready")
+        self.query_one("#status-label", Label).update(f"Status: {text}" if text else "Status: Ready")
 
     def update_progress(self, description: str = None, **kwargs):
-        if description: self.query_one("#progress_status_label", Label).update(description)
+        if description: self.query_one("#progress-status-label", Label).update(description)
 
     def advance_progress(self, advance: float = 1):
         pass
@@ -227,34 +300,43 @@ class LiveJournalScraperApp(App):
         # 2. Reconstruct the `options` dictionary expected by the backend.
         # 3. Launch Playwright context and process each target sequentially.
         self.toggle_controls(True)
-
+        self.query_one("#progress-spinner", SpinnerWidget).visible = True
         self.set_status("")
 
     def on_scraping_finished(self):
         self.toggle_controls(False)
-        self.query_one("#progress_spinner", SpinnerWidget).visible = False
+        self.query_one("#progress-spinner", SpinnerWidget).visible = False
         self.set_status("")
 
+    @work
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         # Event handler for all Button presses, routed by button id.
         actions = {
-            "btn_quit": self.exit,
-            "btn_start": self.start_scraping_flow,
-            "btn_login": self.start_login_flow,
-            "btn_deps": self.start_deps_flow
+            "btn-quit": self.exit,
+            "btn-extras": self.start_extras_scraping_flow,
+            "btn-posts": self.start_posts_scraping_flow,
+            "btn-login": self.start_login_flow,
+            "btn-deps": self.start_deps_flow,
+            "btn-extras-files": self.open_file_picker,
+            "btn-posts-files": self.open_file_picker
         }
         action = actions.get(event.button.id)
-        if action: action()
+        if action and inspect.iscoroutinefunction(action):
+            await action(event.button.id)
+        elif action:
+            action()
 
     def _start_worker(self, coro, name: str):
         if hasattr(self, "_active_worker") and self._active_worker.is_running:
             return
-        self.toggle_controls(True)
-        self.query_one("#progress_spinner", SpinnerWidget).visible = True
+        self.query_one("#progress-spinner", SpinnerWidget).visible = True
         self._active_worker = self.run_worker(coro(), name=name)
 
-    def start_scraping_flow(self):
-        self._start_worker(self.run_scraper_async, "scraper")
+    def start_extras_scraping_flow(self):
+        self._start_worker(self.run_extras_scraper_async, "scraper")
+
+    def start_posts_scraping_flow(self):
+        self._start_worker(self.run_posts_scraper_async, "scraper")
 
     def start_login_flow(self):
         self._start_worker(self.run_login_async, "login")
@@ -262,20 +344,27 @@ class LiveJournalScraperApp(App):
     def start_deps_flow(self):
         self._start_worker(self.run_deps_async, "deps")
 
-    async def run_scraper_async(self):
+    async def open_file_picker(self, btn_id):
+        if opened := await self.push_screen_wait(FileOpen(title="Select Target File")):
+            if btn_id == "btn-extras-files":
+                self.query_one("#extras-target", Input).value = str(opened)
+            elif btn_id == "btn-posts-files":
+                self.query_one("#posts-target", Input).value = str(opened)
+
+    async def run_extras_scraper_async(self):
         # Reset the once-per-run login check flag
         LiveJournalAccount.has_checked_login = False
 
-        log = self.query_one("#log_view", RichLog)
-        self.query_one("#results_table", DataTable).display = False
+        log = self.query_one("#log-view", RichLog)
+        self.query_one("#results-table", DataTable).display = False
         self.set_status("Starting scraping...")
 
-        target = self.query_one("#target", Input).value.strip()
+        target = self.query_one("#extras-target", Input).value.strip()
         if not target:
             log.write("[bold red]Error: Target is required![/bold red]")
             return self.on_scraping_finished()
 
-        user_data_dir = self.query_one("#user-data-dir", Input).value.strip() or "user_profile"
+        user_data_dir = self.query_one("#extras-user-data-dir", Input).value.strip() or "user_profile"
         os.environ["USER_DATA_DIR"] = user_data_dir
 
         def parse_num(field_id, default, num_type):
@@ -285,7 +374,7 @@ class LiveJournalScraperApp(App):
                 return default
 
         delay = parse_num("#delay", 0.0, float)
-        headless = self.query_one("#headless_switch", Switch).value
+        headless = self.query_one("#extras-headless-switch", Switch).value
 
         html_tasks = self.query_one("#html-"
                                     "selection", SelectionList).selected
@@ -306,10 +395,10 @@ class LiveJournalScraperApp(App):
         from . import account_scraper
         account_scraper.settings = {
             "user_data_dir": user_data_dir,
-            "delay": delay,
+            "delay": parse_num("#delay", 0.0, float),
             "max_memories": parse_num("#max-memories", 750, int),
             "max_dl_memories": parse_num("#max-dl-memories", 500, int),
-            "headless": headless,
+            "headless": self.query_one("#extras-headless-switch", Switch).value,
             **options
         }
 
@@ -323,10 +412,13 @@ class LiveJournalScraperApp(App):
 
         try:
             async with async_playwright() as p:
-                log.write(f"[bold blue]Preparing to scrape {len(profile_targets)} LJ account(s)...[/bold blue]\n")
+                if len(profile_targets) > 1:
+                    log.write(f"[bold blue]Preparing to scrape {len(profile_targets)} LJ accounts...[/bold blue]\n")
+                elif len(profile_targets) == 1:
+                    log.write(f"[bold blue]Preparing to scrape LJ account: {profile_targets[0]}[/bold blue]\n")
                 self.set_status("Launching browser context...")
                 context = await launch_browser_with_fallback(
-                    p, user_data_dir=user_data_dir, headless=headless,
+                    p, user_data_dir=user_data_dir, headless=self.query_one("#extras-headless-switch", Switch).value,
                     args=["--no-sandbox", "--disable-dev-shm-usage"]
                 )
 
@@ -369,19 +461,51 @@ class LiveJournalScraperApp(App):
         finally:
             self.on_scraping_finished()
 
+    async def run_posts_scraper_async(self):
+        # Similar to run_extras_scraper_async, but for posts. Implementation would go here.
+        # Reset the once-per-run login check flag
+        LiveJournalAccount.has_checked_login = False
+
+        log = self.query_one("#log-view", RichLog)
+        self.query_one("#results-table", DataTable).display = False
+        self.set_status("Starting scraping...")
+
+        target = self.query_one("#posts-target", Input).value.strip()
+        if not target:
+            log.write("[bold red]Error: Target is required![/bold red]")
+            self.on_scraping_finished()
+
+        user_data_dir = self.query_one("#posts-user-data-dir", Input).value.strip() or "user_profile"
+        os.environ["USER_DATA_DIR"] = user_data_dir
+
+        start_time = asyncio.get_event_loop().time()
+        all_results = []
+
+        try:
+            await main_async(target, settings=self.initial_settings)
+        except Exception as e:
+            log.write(f"\n[bold red]Error: {e}[/bold red]\n")
+            import traceback
+            log.write(traceback.format_exc())
+        finally:
+            elapsed = asyncio.get_event_loop().time() - start_time
+            log.write(f"\n[bold green]Done! Total elapsed time: {elapsed:.1f}s[/bold green]\n")
+            self.on_scraping_finished()
+
+
     async def run_login_async(self):
-        log = self.query_one("#log_view", RichLog)
+        log = self.query_one("#log-view", RichLog)
         log.clear()
         self.set_status("Running Login Flow...")
         try:
-            await run_login_flow(self.query_one("#user-data-dir", Input).value.strip() or "user_profile")
+            await run_login_flow(self.query_one("#extras-user-data-dir", Input).value.strip() or "user_profile")
         except Exception as e:
             log.write(f"[bold red]Login flow failed: {e}[/bold red]\n")
         finally:
             self.on_scraping_finished()
 
     def populate_results_table(self, all_users, elapsed_time):
-        table = self.query_one("#results_table", DataTable)
+        table = self.query_one("#results-table", DataTable)
         table.clear()
         
         def format_icon(status: str) -> Text:
@@ -406,11 +530,11 @@ class LiveJournalScraperApp(App):
                 format_icon(user.results.get("photos", "skipped"))
             )
         table.display = True
-        log = self.query_one("#log_view", RichLog)
+        log = self.query_one("#log-view", RichLog)
         log.write(f"\n[bold green]Done! Total elapsed time: {elapsed_time:.1f}s[/bold green]\n")
 
     async def run_deps_async(self):
-        log = self.query_one("#log_view", RichLog)
+        log = self.query_one("#log-view", RichLog)
         log.clear()
         self.set_status("Installing dependencies...")
         log.write("[bold blue]Installing Playwright Linux dependencies...[/bold blue]\n")

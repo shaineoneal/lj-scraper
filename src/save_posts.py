@@ -228,6 +228,22 @@ async def resolve_proxy(proxy_str):
 # DECOUPLED BUSINESS LOGIC FUNCTIONS
 # ==============================================================================
 
+def update_status(text: str) -> None:
+    """Update the current status if the TUI has hooked console.update_status."""
+    updater = getattr(console, "update_status", None)
+    if callable(updater):
+        updater(text)
+    elif text:
+        console.print(f"[dim]{text}[/dim]")
+
+
+def status_context(text: str):
+    status_factory = getattr(console, "status", None)
+    if callable(status_factory):
+        return status_factory(text, spinner="dots")
+    return nullcontext()
+
+
 def extract_urls_from_excel(excel_file_path: Path | str) -> list[str]:
     """
     Loads an Excel workbook and reads target post URLs from Column H (skipping header).
@@ -465,35 +481,38 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay
         "total": len(posts)
     }
 
-    for idx, post_url in enumerate(posts, start=1):
-        print(f"[{idx}/{len(posts)}] Scraping post: {post_url}")
+    with status_context(f"Saving {len(posts)} post(s)") as _status:
+        for idx, post_url in enumerate(posts, start=1):
+            update_status(f"[$success]Saving post(s)...[/$success]")
+            console.print(f"[{idx}/{len(posts)}] Scraping post: {post_url}")
 
-        try:
-            # Instantiate the LJPost helper
-            post = LJPost(page, post_url)
+            try:
+                # Instantiate the LJPost helper
+                post = LJPost(page, post_url)
 
-            # Load the post page
-            await post.load()
-            if delay > 0:
-                jitter = delay * random.uniform(0.5, 1.5)
-                await asyncio.sleep(jitter)
-            if post.page_count <= 1.0:
-                await post.save_to_file(output_path)
-            else:
-                for page_num in range(1, int(post.page_count) + 1):
-                    if page_num == 1:
-                        await post.save_to_file(output_path, filename_index=page_num)
-                    else:
-                        await post.load(index=page_num)
-                        print(post.page.url)
-                        await post.save_to_file(output_path, filename_index=page_num)
+                # Load the post page
+                await post.load()
+                if delay > 0:
+                    jitter = delay * random.uniform(0.5, 1.5)
+                    await asyncio.sleep(jitter)
+                if post.page_count <= 1.0:
+                    await post.save_to_file(output_path)
+                else:
+                    for page_num in range(1, int(post.page_count) + 1):
+                        if page_num == 1:
+                            await post.save_to_file(output_path, filename_index=page_num)
+                        else:
+                            await post.load(index=page_num)
+                            print(post.page.url)
+                            await post.save_to_file(output_path, filename_index=page_num)
 
-            results["success_count"] += 1
+                results["success_count"] += 1
 
-        except Exception as err:
-            print(f"Error processing post {post_url}: {err}")
-            results["failed_urls"].append(post_url)
+            except Exception as err:
+                console.print_exception()
+                results["failed_urls"].append(post_url)
 
+    update_status("")
     return results
 
 
@@ -533,72 +552,15 @@ def parse_url_target(url: str) -> tuple[str, str]:
     return "single_posts", filename
 
 
-async def main_async(args_list=None):
+async def main_async(target=None, settings=None):
 
-    parser = configargparse.ArgumentParser(
-        config_file_parser_class=JSONConfigFileParser,
-        default_config_files=['scraper_config.json'],
-        description="Save specific LiveJournal posts as HTML documents."
-    )
-    parser.add_argument('-c', '--config-file', is_config_file=True, help="Path to custom JSON config file.")
-    parser.add_argument("target", nargs="?", help="A LiveJournal post URL, or an Excel file (.xlsx) containing post URLs in Column H, or a .txt file containing URLs.")
-    parser.add_argument("--user-data-dir", default=None, env_var="USER_DATA_DIR", help=f"Directory for browser session data (config key: 'user_data_dir', default: read from config or '{DEFAULT_USER_DATA_DIR}')")
-    parser.add_argument("--headed", action="store_true", default=None, help="Run browser in headed mode with a visible window (config key: 'headed').")
-    parser.add_argument("--headless", action="store_true", default=None, help="Run browser in headless mode without a visible window (config key: 'headless').")
-    parser.add_argument("--delay", type=float, default=None, help="Time in seconds to wait before page actions with a randomized +/- 50%% jitter (config key: 'delay').")
-    parser.add_argument("--browser-path", env_var="BROWSER_PATH", help="Path to custom browser executable (config key: 'browser_path').")
-    parser.add_argument("--proxy", help="Proxy server URL, 'auto' to fetch a free proxy, or 'none' to disable proxy (config key: 'proxy').")
-    parser.add_argument("--timeout", type=float, default=None, help="Browser page loading timeout in seconds (config key: 'timeout').")
+    update_status("Initializing...")
 
-    args, unknown = parser.parse_known_args(args_list)
+    if settings is None:
+        settings = load_config()
 
-    # Sync parsed arguments back to the global config settings dict
-    settings.update({k: v for k, v in vars(args).items() if v is not None})
-
-    target = args.target or settings.get("target")
-    if not target:
-        parser.print_help()
-        return
-
-    # Determine user data directory
-    user_data_dir = args.user_data_dir or os.environ.get("USER_DATA_DIR") or settings.get("user_data_dir") or "user_profile"
-    os.environ["USER_DATA_DIR"] = user_data_dir
-    browser_path = args.browser_path or settings.get("browser_path") or os.environ.get("BROWSER_PATH")
-
-    # Resolve headed/headless
-    headed = None
-    if args.headed is not None or args.headless is not None:
-        if args.headed:
-            headed = True
-        elif args.headless:
-            headed = False
-
-    if headed is None:
-        headed = settings.get("headed")
-
-    if headed is None:
-        headless_cfg = settings.get("headless")
-        if headless_cfg is not None:
-            headed = not headless_cfg
-
-    if headed is None:
-        headed = False
-
-    headless = not headed
-
-    # Resolve delay
-    delay = args.delay if args.delay is not None else settings.get("delay") if settings.get("delay") is not None else settings.get("default_delay", 0.0)
-
-    # Resolve timeout
-    timeout = args.timeout if args.timeout is not None else settings.get("timeout", 20.0)
-
-    # Resolve proxy
-    resolved_proxy = await resolve_proxy(args.proxy)
-
-    # Check if target is a URL or .xlsx or .txt file containing URLs
     posts = []
-    output_dir = None
-    
+
     if target.endswith(".xlsx"):
         try:
             posts = extract_urls_from_excel(target)
@@ -629,7 +591,7 @@ async def main_async(args_list=None):
         posts = [target]
         username, _ = parse_url_target(target)
         output_dir = Path("output") / username
-        console.print(f"[bold green]Saving single post URL: {target} -> Saving under folder: {output_dir}[/bold green]")
+        console.print(f"[bold green]Saving single post URL: {target} -> Saving under folder: {output_dir}[/bold green]\n")
     else:
         console.print(f"[bold red]Invalid target '{target}'. Please specify a post URL, a .xlsx file, or a .txt file containing URLs.[/bold red]")
         sys.exit(1)
@@ -660,10 +622,12 @@ async def main_async(args_list=None):
 
     console.print("[bold blue]Launching browser context...[/bold blue]")
     async with async_playwright() as p:
+        timeout = settings.get("timeout", 30)
+
         context = await launch_browser_with_fallback(
             p,
-            user_data_dir=user_data_dir,
-            headless=headless,
+            user_data_dir=str(settings.get("user_data_dir", DEFAULT_USER_DATA_DIR)),
+            headless=bool(settings.get("headless", True)),
             args=["--disable-dev-shm-usage"]
         )
         try:
@@ -671,7 +635,7 @@ async def main_async(args_list=None):
             # Set default timeouts
             page.set_default_timeout(int(timeout * 1000))
             page.set_default_navigation_timeout(int(timeout * 1000))
-            results = await save_posts(page, posts, output_dir, delay=delay)
+            results = await save_posts(page, posts, output_dir, delay=settings.get("delay", 0.0))
             console.print(f"\n[bold green]Completed! Saved {results['success_count']} posts. Failed: {len(results['failed_urls'])}[/bold green]")
         finally:
             await context.close()
