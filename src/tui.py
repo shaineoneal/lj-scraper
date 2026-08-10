@@ -237,6 +237,13 @@ class LiveJournalScraperApp(App):
         table = self.query_one("#results-table", DataTable)
         table.add_columns("Status", "Account", "Entries", "Profile", "Tags", "Userpics", "Virtual Gifts", "Memories", "Photos")
 
+        if s.get("instant_start") == "extras":
+            self.query_one("#btn-extras", Button).press()
+        if s.get("instant_start") == "posts":
+            self.query_one("#sidebar", TabbedContent).active = "tab-posts"
+            self.call_after_refresh(lambda: self.query_one("#btn-posts", Button).press())
+
+
     def on_unmount(self) -> None:
         # Cleanup: restore the original console methods when the app closes
         # to prevent broken stdout in the terminal after exit.

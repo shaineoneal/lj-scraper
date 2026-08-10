@@ -86,6 +86,9 @@ async def main_async():
     parser.add_argument("--max-dl-memories", type=int, nargs="?", const=True, default=500,
                         help="Maximum number of memories to download (default: 500).")
 
+    parser.add_argument("--instant-start", choices=["extras", "posts"],
+                        help="Instantly start scraping after tui is loaded")
+
     args = parser.parse_args()
 
     settings = load_config(args.config)
