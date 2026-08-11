@@ -86,7 +86,11 @@ async def main_async():
     parser.add_argument("--max-dl-memories", type=int, nargs="?", const=True, default=500,
                         help="Maximum number of memories to download (default: 500).")
 
-    args = parser.parse_args()
+    try:
+        args, unknown = parser.parse_known_args()
+    except configargparse.ConfigFileParserException as e:
+        print(f"[bold $text-error]Error parsing arguments: {e}[/bold $text-error]")
+        sys.exit(1)
 
     settings = load_config(args.config)
 
@@ -116,7 +120,7 @@ async def main_async():
         settings["target"] = target
 
     from .tui import LiveJournalScraperApp
-    app = LiveJournalScraperApp(initial_settings=settings)
+    app = LiveJournalScraperApp(initial_settings=settings, unknown_args=unknown)
     await app.run_async()
 
 

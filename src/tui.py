@@ -60,9 +60,11 @@ class LiveJournalScraperApp(App):
     shared_max_dl_memories = reactive("500")
     shared_timeout = reactive("30.0")
 
-    def __init__(self, initial_settings=None, **kwargs):
+    def __init__(self, initial_settings=None, unknown_args=None, **kwargs):
         super().__init__(**kwargs)
         self.initial_settings = initial_settings or {}
+        self.settings = initial_settings or {}
+        self.unknown_args = unknown_args
 
     def _invoke(self, f, *a, **k):
         # Textual UI updates must happen on the main thread.
