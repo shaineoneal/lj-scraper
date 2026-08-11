@@ -114,7 +114,7 @@ class LiveJournalAccount:
         page = None
         async with initialize_spinner(f"Preparing to scrape {label}...", status=self.status, spinner_type="dots") as spinner:
             try:
-                page = await self._fetch_page(url, status_or_spinner=spinner)
+                page = await self._fetch_page(url)
                 spinner.update("[bold blue]Checking if page exists...[/bold blue]", spinner="dots")
                 if check_fn and not await check_fn(page, int(self.delay * 1000)):
                     if task_name == "photos" and self.account_type == "community":
@@ -134,7 +134,7 @@ class LiveJournalAccount:
                     await page.close()
         return result
 
-    async def _save_page_assets(self, page, spinner, task_name, filename, res) -> None:
+    async def _save_page_assets(self, page, task_name, filename, res) -> None:
         """Helper to download both HTML and PDF, compress the PDF, and update results."""
         save_path = self.user_dir / filename
 
@@ -172,19 +172,19 @@ class LiveJournalAccount:
             console.print(f"    [bold green]✓[/bold green] [dim]Saved assets for:[/dim] {task_name}")
 
     async def scrape_entries(self) -> dict:
-        async def save(page, spinner, res):
+        async def save(page, res):
             title = await page.title()
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             safe_title = safe_title or f"{self.username} - Recent Entries"
 
-            await self._save_page_assets(page, spinner, "entries", safe_title, res)
+            await self._save_page_assets(page, "entries", safe_title, res)
 
         return await self._scrape_task("entries", "recent entries", save_fn=save)
 
     async def scrape_profile(self) -> dict:
-        async def save(page, spinner, res):
+        async def save(page, res):
             filename = f"{self.username} - Profile"
-            await self._save_page_assets(page, spinner, "profile", filename, res)
+            await self._save_page_assets(page, "profile", filename, res)
             
             memory_count = await page.locator('.b-profile-stat-memcount > .b-profile-stat-value').all_inner_texts()
             res["mem_count"] = memory_count[0].replace(',', '') if memory_count else "0"
@@ -192,23 +192,23 @@ class LiveJournalAccount:
         return await self._scrape_task("profile", "profile", save_fn=save)
 
     async def scrape_tags(self) -> dict:
-        async def save(page, spinner, res):
+        async def save(page, res):
             filename = f"{self.username} - Tags"
-            await self._save_page_assets(page, spinner, "tags", filename, res)
+            await self._save_page_assets(page, "tags", filename, res)
 
         return await self._scrape_task("tags", "tags", check_fn=check_for_tags, save_fn=save)
 
     async def scrape_userpics(self) -> dict:
-        async def save(page, spinner, res):
+        async def save(page, res):
             filename = f"{self.username} - Userpics"
-            await self._save_page_assets(page, spinner, "userpics", filename, res)
+            await self._save_page_assets(page, "userpics", filename, res)
 
         return await self._scrape_task("userpics", "userpics", check_fn=check_for_userpics, save_fn=save)
 
     async def scrape_vgifts(self) -> dict:
-        async def save(page, spinner, res):
+        async def save(page, res):
             filename = f"{self.username} - Virtual Gifts"
-            await self._save_page_assets(page, spinner, "vgifts", filename, res)
+            await self._save_page_assets(page, "vgifts", filename, res)
 
         return await self._scrape_task("vgifts", "virtual gifts", check_fn=check_for_vgifts, save_fn=save)
 
@@ -218,11 +218,11 @@ class LiveJournalAccount:
                 return await check_for_memories(page, timeout=(self.timeout*1000))
             return True
 
-        async def save(page, spinner, res):
+        async def save(page, res):
             filename = f"{self.username} - Memories"
-            await scroll_with_keyboard(page, spinner, self.mem_count if self.mem_count else settings.get('max_dl_memories', 500))
+            await scroll_with_keyboard(page, self.mem_count if self.mem_count else settings.get('max_dl_memories', 500))
             await page.wait_for_timeout(5000)
-            await self._save_page_assets(page, spinner, "memories", filename, res)
+            await self._save_page_assets(page, "memories", filename, res)
 
         if self.mem_count > settings.get('max_memories', 750):
             console.print(
@@ -235,9 +235,9 @@ class LiveJournalAccount:
         return await self._scrape_task("memories", "memories", check_fn=check, save_fn=save)
 
     async def scrape_mem_index(self):
-        async def save(page, spinner, res):
+        async def save(page, res):
             filename = f"{self.username} - Memory Index"
-            await self._save_page_assets(page, spinner, "memory_index", filename, res)
+            await self._save_page_assets(page, "memory_index", filename, res)
 
         async with initialize_spinner("Navigating to Memory Index...", status=self.status) as spinner:
             await self._scrape_task("memory_index", "memory index", save_fn=save)
