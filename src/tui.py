@@ -394,8 +394,7 @@ class LiveJournalScraperApp(App):
             else:
                 options[task] = False
 
-        from . import account_scraper
-        account_scraper.settings = {
+        settings = {
             "user_data_dir": user_data_dir,
             "delay": parse_num("#delay", 0.0, float),
             "max_memories": parse_num("#max-memories", 750, int),
@@ -484,7 +483,7 @@ class LiveJournalScraperApp(App):
         all_results = []
 
         try:
-            await main_async(target, settings=self.initial_settings)
+            await main_async(target, settings=self.settings)
         except Exception as e:
             log.write(f"\n[bold red]Error: {e}[/bold red]\n")
             import traceback
