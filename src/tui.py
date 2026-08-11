@@ -426,7 +426,7 @@ class LiveJournalScraperApp(App):
                 try:
                     for username in profile_targets:
                         self.set_status(f"Processing LJ account: {username}")
-                        lj_user = LiveJournalAccount(context, username, options, delay=delay, status=None)
+                        lj_user = LiveJournalAccount(context, username, options)
                         await lj_user.process()
                         all_results.append(lj_user)
 

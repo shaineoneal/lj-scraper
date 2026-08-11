@@ -27,18 +27,17 @@ class LiveJournalAccount:
     has_checked_login = False
     logged_in_user = None
 
-    def __init__(self, context, username: str, options: dict, delay: float = 7.5, status=None):
+    def __init__(self, context, username: str, options: dict):
         self.context = context
         self.username = username
         self.account_type = None
         self.options = options
         import random
-        self.jitter = random.uniform(0.5, 1.5) * delay
+        self.jitter = random.uniform(0.5, 1.5) * settings.get("delay", 3.0) # in seconds
         self.user_dir = Path(f"output/{username}")
         self.is_retrying = False
         self.timeout = 30   #TODO: Fix
-        self.delay = delay
-        self.status = status
+        self.status = None
         self.mem_count = 0
 
 
@@ -67,7 +66,7 @@ class LiveJournalAccount:
         }
         self.has_run_user_info = False
 
-    async def _fetch_page(self, url: str, max_attempts: int = 7, status_or_spinner = None) -> Page | None:
+    async def _fetch_page(self, url: str, max_attempts: int = 7) -> Page | None:
         """Navigates to the given URL with retries and returns the active page object."""
         import asyncio
         await asyncio.sleep(self.jitter)
