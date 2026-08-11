@@ -48,7 +48,6 @@ class JSONConfigFileParser(configargparse.ConfigFileParser):
                 result[normalized_key] = str(v)
         return result
 
-
 async def main_async():
     parser = configargparse.ArgumentParser(
         description="Scrape and download LiveJournal accounts and photo albums.",
@@ -62,15 +61,11 @@ async def main_async():
                         help="Path to a JSON config file to load settings from (default: config.json).")
     parser.add_argument("--user-data-dir", default=None,
                         help=f"Directory for browser session data (default: read from config or USER_DATA_DIR env var or '{DEFAULT_USER_DATA_DIR}')")
-    parser.add_argument("--login", type=str2bool, nargs="?", const=True, default=None,
-                        help="Launch browser to log in manually and save session credentials.")
-    parser.add_argument("--headed", type=str2bool, nargs="?", const=True, default=None,
-                        help="Run browser in headed mode with a visible window.")
     parser.add_argument("--headless", action="store_true", default=None, help="Run browser in headless mode.")
-    parser.add_argument("--delay", type=float, default=None,
+    parser.add_argument("--delay", type=float, default=3.0,
                         help="Time in seconds to wait before page actions/downloads.")
-    parser.add_argument("--install-deps", type=str2bool, nargs="?", const=True, default=None,
-                        help="Install missing Linux system dependencies for Playwright.")
+    parser.add_argument("--timeout", type=int, default=30,
+                        help="Timeout in seconds for page actions (default: 30).")
 
     # Selective account scraping flags
     parser.add_argument("--entries", nargs="*", choices=["html", "pdf", "both", "none"], help="Scrape and download entries.")

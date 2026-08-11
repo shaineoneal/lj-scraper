@@ -195,7 +195,7 @@ class LiveJournalScraperApp(App):
         console_instance.update_status = lambda text: self._invoke(self.set_status, text)
 
         # Repopulate the inputs and selections from the saved initial_settings dict.
-        s = self.initial_settings
+        s = self.settings
         self.query_one("#extras-target", Input).value = s.get("target", "")
         self.query_one("#target-input-container", Grid).border_title = f"Target (Username, URL, or .txt file)"
         self.query_one("#extras-headless-switch", Switch).value = s.get("headless", not s.get("headed", False))
