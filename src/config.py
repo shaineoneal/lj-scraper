@@ -7,6 +7,14 @@ from rich.console import Console
 
 console = Console()
 
+def update_status(text: str) -> None:
+    """Update the current status if the TUI has hooked console.update_status."""
+    updater = getattr(console, "update_status", None)
+    if callable(updater):
+        updater(text)
+    elif text:
+        console.print(f"[dim]{text}[/dim]")
+
 CONFIG_FILE = Path("config.json")
 
 DEFAULT_SETTINGS = {

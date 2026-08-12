@@ -12,7 +12,7 @@ from .config import (
     SEL_HEADER,
     SEL_PHOTO_DESC,
     SEL_TITLE,
-    console,
+    update_status,
 )
 
 
@@ -32,7 +32,7 @@ class LiveJournalPhotoScraper:
     async def scrape_album(self, url: str, output_dir = None) -> bool:
         """Handles the end-to-end flow for a single album URL."""
         if not url.startswith(('http://', 'https://')):
-            console.log(f"[bold red]Invalid URL skipped:[/bold red] {url}")
+            print(f"[bold $text-error]Invalid URL skipped:[/bold $text-error] {url}")
             return False
 
         # Parse url parts for directory and PDF naming
@@ -52,22 +52,22 @@ class LiveJournalPhotoScraper:
             max_attempts = 3
             for attempt in range(1, max_attempts + 1):
                 try:
-                    with console.status(f"[bold blue]Navigating to album URL... (Attempt {attempt})", spinner="earth"):
-                        resp = await page.goto(url, wait_until="domcontentloaded")
-                        if not resp or resp.status != 200:
-                            raise Exception(f"HTTP Status {resp.status if resp else 'No Response'}")
-                        await page.wait_for_timeout(2000)
+                    update_status(f"Navigating to album URL... (Attempt {attempt})")
+                    resp = await page.goto(url, wait_until="domcontentloaded")
+                    if not resp or resp.status != 200:
+                        raise Exception(f"HTTP Status {resp.status if resp else 'No Response'}")
+                    await page.wait_for_timeout(2000)
 
                     metadata = await self._extract_metadata_and_scroll(page)
 
                     # Ensure target directory exists and save PDF of the scrolled page
                     dir_path.mkdir(parents=True, exist_ok=True)
                     pdf_path = dir_path / f"{album_user}_album_{album_id}.pdf"
-                    
+
                     from .utils import download_pdf
-                    console.print(f"    [bold blue]Downloading Album Page PDF...[/bold blue]")
+                    update_status("Downloading Album Page PDF...")
                     if await download_pdf(page, str(pdf_path)):
-                        console.print(f"    [bold green]✓[/bold green] [dim]Saved PDF:[/dim] {pdf_path}")
+                        print(f"        [$text-success]✓[/$text-success] [dim]Saved PDF:[/dim] {pdf_path}")
 
                     stats = await self._download_images(page, url, metadata, output_dir)
 
@@ -78,9 +78,9 @@ class LiveJournalPhotoScraper:
                 except (TimeoutError, Exception) as e:
                     if "AuthenticationError" in type(e).__name__:
                         raise e
-                    console.log(f"[bold yellow]Attempt {attempt} failed for {url}: {e}[/bold yellow]")
+                    print(f"[bold yellow]Attempt {attempt} failed for {url}: {e}[/bold yellow]")
                     if attempt == max_attempts:
-                        console.log(f"[bold red]Max retry attempts reached for {url}. Skipping.[/bold red]")
+                        print(f"[bold $text-error]Max retry attempts reached for {url}. Skipping.[/bold $text-error]")
                         break
                     else:
                         await asyncio.sleep(2)
@@ -96,7 +96,7 @@ class LiveJournalPhotoScraper:
             if not header:
                 raise Exception("Album header not found. The page structure may have changed or the album may be unavailable.")
         except (AssertionError, PlaywrightError) as e:
-            console.log(f"[bold red]Failed to locate album header: {e}[/bold red]")
+            print(f"[bold $text-error]Failed to locate album header: {e}[/bold $text-error]")
             raise Exception("Album header not found. The page structure may have changed or the album may be unavailable.")
 
         title_el = header.locator(SEL_TITLE)
@@ -115,7 +115,7 @@ class LiveJournalPhotoScraper:
 
         if title is None or title.strip() == "":
             if count_text == "0":
-                console.log("[bold yellow]Album appears to be empty (0 photos) and has no title. Skipping.[/bold yellow]")
+                print("[$text-warning]Album appears to be empty (0 photos) and has no title. Skipping.[/$text-warning]")
                 raise Exception("Album details missing or empty album.")
 
         desc_el = header.locator(SEL_DESC)
@@ -148,30 +148,28 @@ class LiveJournalPhotoScraper:
         last_height = await page.evaluate("document.body.scrollHeight")
         retries = 0
 
-        with console.status("[bold yellow]Scrolling to load all images...", spinner="dots") as status:
-            while True:
-                await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+        update_status("Scrolling to load all images...")
+        while True:
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+            await asyncio.sleep(wait_time)
+            current_scroll = await page.evaluate("window.scrollY + window.innerHeight")
+            current_height = await page.evaluate("document.body.scrollHeight")
+            if current_scroll > current_height - 5:
+                update_status("Hit current bottom, waiting for content...")
                 await asyncio.sleep(wait_time)
 
-                current_scroll = await page.evaluate("window.scrollY + window.innerHeight")
-                current_height = await page.evaluate("document.body.scrollHeight")
+                new_height = await page.evaluate("document.body.scrollHeight")
+                if new_height == last_height:
+                    retries += 1
+                    update_status(f"No new content. Retrying ({retries}/{stable_checks})...")
+                    await page.mouse.wheel(0, -500)
 
-                if current_scroll > current_height - 5:
-                    status.update("[bold cyan]Hit current bottom, waiting for content...[/bold cyan]")
-                    await asyncio.sleep(wait_time)
-
-                    new_height = await page.evaluate("document.body.scrollHeight")
-                    if new_height == last_height:
-                        retries += 1
-                        status.update(f"[bold magenta]No new content. Retrying ({retries}/{stable_checks})...[/bold magenta]")
-                        await page.mouse.wheel(0, -500)
-
-                        if retries >= stable_checks:
-                            console.log("[bold green]Scroll height stable. Reached the end.[/bold green]")
-                            break
-                    else:
-                        retries = 0
-                        last_height = new_height
+                    if retries >= stable_checks:
+                        update_status("Scroll height stable. Reached the end.")
+                        break
+                else:
+                    retries = 0
+                    last_height = new_height
 
     async def _download_images(self, page: Page, url: str, metadata: dict, output_dir: Path = None) -> dict:
         """Extracts src attributes and downloads images with a progress bar."""
@@ -189,7 +187,7 @@ class LiveJournalPhotoScraper:
         containers = await page.query_selector_all(SEL_CONTAINER)
 
         if not containers:
-            console.log("[bold yellow]No images found on the page to download.[/bold yellow]")
+            print("[$text-warning]No images found on the page to download.[/$text-warning]")
             return {}
 
         stats = {"downloaded": 0, "failed": 0, "dir": dir_path}
@@ -199,16 +197,7 @@ class LiveJournalPhotoScraper:
             writer = csv.writer(f)
             writer.writerow(["album_id", "album_name", "album_desc", "url", "description"])
 
-            with Progress(
-                    SpinnerColumn(),
-                    TextColumn("[progress.description]{task.description}"),
-                    BarColumn(),
-                    TaskProgressColumn(),
-                    TimeRemainingColumn(),
-                    console=console
-            ) as progress:
-
-                task = progress.add_task("[cyan]Preparing to download...", total=len(containers))
+            update_status("Downloading...")
 
                 for body in containers:
                     img = await body.query_selector('img')
@@ -253,7 +242,7 @@ class LiveJournalPhotoScraper:
 
                     progress.advance(task)
 
-            progress.update(task, description="[bold green]Album download complete![/bold green]")
+        update_status("[$text-success]Album download complete![/$text-success]")
 
         return stats
 
@@ -269,7 +258,7 @@ class LiveJournalPhotoScraper:
                 if resp.status == 412:
                     raise AuthenticationError("Precondition Failed (412). You might need to log in to access these photos.")
                 if resp.status in [404, 415]:
-                    console.log(f"[yellow]Image not found (Status {resp.status}): {img_url}[/yellow]")
+                    print(f"        [$text-warning]Image not found (Status {resp.status}): {img_url}[/$text-warning]")
                     return False
                 if resp.status != 200:
                     raise Exception(f"Status code {resp.status}")
@@ -279,13 +268,13 @@ class LiveJournalPhotoScraper:
                 return True
 
             except AuthenticationError as e:
-                console.log(f"[bold red]Authentication Error ({e})[/bold red]")
+                print(f"[bold $text-error]Authentication Error ({e})[/bold $text-error]")
                 raise e
             except Exception as e:
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(2 * (2 ** attempt))
                 else:
-                    console.log(f"[bold red]Failed to download {img_url}: {e}[/bold red]")
+                    print(f"[bold $text-error]Failed to download {img_url}: {e}[/bold $text-error]")
 
         return False
 

@@ -5,26 +5,27 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 from rich.panel import Panel
 from .config import console
+from .config import update_status
 
 async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, args: list):
     """Tries to launch bundled Chromium, falling back to system Chrome/Chromium on failure."""
-    with console.status("[bold blue]Launching browser...[/bold blue]", spinner="dots") as status:
-        # 1. Try bundled Chromium first
-        try:
-            status.update("[bold blue]Launching bundled Chromium...[/bold blue]")
-            context = await p.chromium.launch_persistent_context(
-                user_data_dir=user_data_dir,
-                headless=headless,
-                args=args,
-                ignore_https_errors=True
-            )
-            return context
-        except Exception as e:
-            import sys
-            if getattr(sys, 'frozen', False):
-                console.print("[yellow]Bundled Chromium failed to launch (possibly due to missing Linux OS dependencies).[/yellow]")
-            else:
-                console.print(f"[yellow]Default Chromium launch failed: {e}[/yellow]")
+    update_status("Launching browser...")
+    # 1. Try bundled Chromium first
+    try:
+        update_status("Launching bundled Chromium...")
+        context = await p.chromium.launch_persistent_context(
+            user_data_dir=user_data_dir,
+            headless=headless,
+            args=args,
+            ignore_https_errors=True
+        )
+        return context
+    except Exception as e:
+        import sys
+        if getattr(sys, 'frozen', False):
+            print("[$text-warning]Bundled Chromium failed to launch (possibly due to missing Linux OS dependencies).[/$text-warning]")
+        else:
+            print(f"[$text-warning]Default Chromium launch failed: {e}[/$text-warning]")
 
         # 2. Try system Google Chrome
         try:
@@ -37,12 +38,23 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
                 ignore_https_errors=True
             )
             return context
-        except Exception as e:
             pass
+    # 2. Try system Google Chrome
+    try:
+        update_status("Launching system-installed Google Chrome...")
+        context = await p.chromium.launch_persistent_context(
+            user_data_dir=user_data_dir,
+            headless=headless,
+            channel="chrome",
+            args=args,
+            ignore_https_errors=True
+        )
+        return context
+        pass
 
         # 3. Try system Chromium
         try:
-            status.update("[blue]Attempting to launch system-installed Chromium...[/blue]")
+            update_status("[blue]Attempting to launch system-installed Chromium...[/blue]")
             context = await p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
                 headless=headless,
@@ -55,9 +67,9 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
             pass
 
     # 4. If all fail, print troubleshooting options
-    console.print("\n[bold red]❌ Browser launch failed completely.[/bold red]")
+    print("\n[bold red]❌ Browser launch failed completely.[/bold red]")
     if os.name != 'nt':
-        console.print(
+        print(
             "[bold yellow]If you are on Linux, you are likely missing required system libraries (e.g., libgbm, libatk, libasound).\n"
             "To fix this, choose the option for your Linux distribution:\n\n"
             "  1. If you are on Ubuntu/Debian (apt-get):\n"
@@ -76,7 +88,7 @@ async def run_login_flow(user_data_dir: str):
     """Launches browser to let the user log in (headed or headlessly via username/password)."""
 
     async with async_playwright() as p:
-        console.print(Panel.fit(
+        print(Panel.fit(
             "A browser window has opened. Please log in to your LiveJournal account and then close the browser to save your session data for future scraping runs.\n\n"
             f"[dim]Session data will be saved to:[/dim] [bold green]{Path(user_data_dir).resolve()}[/bold green]\n"
             f"[dim]If you want to use a different directory for session data, set the USER_DATA_DIR environment variable or use the --user-data-dir flag when running the script.[/dim]",
@@ -104,4 +116,4 @@ async def run_login_flow(user_data_dir: str):
 
         # Wait until closed
         await closed_event.wait()
-        console.print("[bold green]Browser closed. Session data saved successfully![/bold green]")
+        print("[bold green]Browser closed. Session data saved successfully![/bold green]")

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from playwright.async_api import Page
 
-from .config import URL_SUFFIX, load_config, status_context
+from .config import URL_SUFFIX, load_config, update_status
 from .utils import (
     check_for_albums,
     check_for_memories,
@@ -72,7 +72,7 @@ class LiveJournalAccount:
 
         for attempt in range(max_attempts):
             try:
-                status_or_spinner.update(f"[bold blue]Navigating to {url} (Attempt {attempt + 1}/{max_attempts})...[/bold blue]", spinner="dots")
+                update_status(f"Navigating to {url} (Attempt {attempt + 1}/{max_attempts})...")
 
                 page = await self.context.new_page()
                 page.set_default_timeout(timeout_ms)
@@ -107,26 +107,26 @@ class LiveJournalAccount:
         result = {"html": False, "pdf": False, "success": False, "error": None}
         url = self.urls[task_name]
         page = None
-        async with initialize_spinner(f"Preparing to scrape {label}...", status=self.status, spinner_type="dots") as spinner:
-            try:
-                page = await self._fetch_page(url)
-                spinner.update("[bold blue]Checking if page exists...[/bold blue]", spinner="dots")
-                if check_fn and not await check_fn(page, int(self.delay * 1000)):
-                    if task_name == "photos" and self.account_type == "community":
-                        return result
-                    console.print(f"    [bold yellow]⚠[/bold yellow] [dim]No {label} found for {self.username}, skipping.[/dim]")
+        update_status(f"Preparing to scrape {label}...")
+        try:
+            page = await self._fetch_page(url)
+            update_status("Checking if page exists...")
+            if check_fn and not await check_fn(page, int(self.jitter * 1000)):
+                if task_name == "photos" and self.account_type == "community":
                     return result
+                print(f"    [bold $text-warning]⚠[/bold $text-warning] [dim]No {label} found for {self.username}, skipping.[/dim]")
+                return result
 
-                if save_fn:
-                    await save_fn(page, spinner, result)
-                result["success"] = True
-            except Exception as e:
-                if task_name != "photos" and self.account_type != "community":
-                    console.print(f"    [bold red]✗[/bold red] [dim]Failed:[/dim] {url} - {str(e)}")
-                    result["error"] = True
-            finally:
-                if page:
-                    await page.close()
+            if save_fn:
+                await save_fn(page, result)
+            result["success"] = True
+        except Exception as e:
+            if task_name != "photos" and self.account_type != "community":
+                print(f"    [bold $text-error]✗[/bold $text-error] [dim]Failed:[/dim] {url} - {str(e)}")
+                result["error"] = True
+        finally:
+            if page:
+                await page.close()
         return result
 
     async def _save_page_assets(self, page, task_name, filename, res) -> None:
@@ -136,35 +136,35 @@ class LiveJournalAccount:
         # Determine what to save for this task
         task_option = self.options.get(task_name)
         if task_option is False or task_option is None:
-            console.print(f"    [bold yellow]⚠[/bold yellow] [dim]Skipping saving assets for {task_name} (disabled).[/dim]")
+            print(f"    [bold $text-warning]⚠[/bold $text-warning] [dim]Skipping saving assets for {task_name} (disabled).[/dim]")
             return
 
         save_html = task_option in ("html", "both")
         save_pdf = task_option in ("pdf", "both")
 
         if not save_html and not save_pdf:
-            console.print(f"    [bold yellow]⚠[/bold yellow] [dim]Skipping saving assets for {task_name} (no formats enabled).[/dim]")
+            print(f"    [bold $text-warning]⚠[/bold $text-warning] [dim]Skipping saving assets for {task_name} (no formats enabled).[/dim]")
             return
 
         try:
             if save_html:
-                spinner.update("[bold blue]Downloading HTML...[/bold blue]")
+                update_status("[bold]Downloading HTML...[/bold]")
                 await download_html(page, f"{save_path}.html")
                 res["html"] = True
 
             if save_pdf:
-                spinner.update("[bold blue]Downloading PDF...[/bold blue]")
+                update_status("Downloading PDF...")
                 if await download_pdf(page, f"{save_path}.pdf"):
                     res["pdf"] = True
-                    spinner.update("[bold blue]Compressing PDF...[/bold blue]")
+                    update_status("[bold]Compressing PDF...[/bold]")
                     await compress_pdf(f"{save_path}.pdf")
         except Exception as e:
-            console.print(f"    [bold red]✗[/bold red] [dim]Error saving assets for {task_name}:[/dim] {e}")
+            print(f"    [bold red]✗[/bold red] [dim]Error saving assets for {task_name}:[/dim] {e}")
 
         if task_name == "memory_index":
-            console.print(f"        [bold green]✓[/bold green] [dim]Saved assets for:[/dim] {task_name} (Memory Index only, not full memories)")
+            print(f"        [bold green]✓[/bold green] [dim]Saved assets for:[/dim] {task_name} (Memory Index only, not full memories)")
         if task_name != "photos" and task_name != "memory_index":
-            console.print(f"    [bold green]✓[/bold green] [dim]Saved assets for:[/dim] {task_name}")
+            print(f"    [bold green]✓[/bold green] [dim]Saved assets for:[/dim] {task_name}")
 
     async def scrape_entries(self) -> dict:
         async def save(page, res):
@@ -220,11 +220,11 @@ class LiveJournalAccount:
             await self._save_page_assets(page, "memories", filename, res)
 
         if self.mem_count > settings.get('max_memories', 750):
-            console.print(
+            print(
                 f"    [bold yellow]⚠[/bold yellow] [dim]Memory count ({self.mem_count}) exceeds max_memories, collecting the index and the first {settings.get('max_dl_memories')} memories...")
             self.mem_count = settings.get('max_dl_memories', 500)
         elif not self.mem_count:
-            console.print(
+            print(
                 f"    [bold yellow]⚠[/bold yellow] [dim]Unknown memory count, a maximum of {settings.get('max_dl_memories', 750)} memories will be collected...")
 
         return await self._scrape_task("memories", "memories", check_fn=check, save_fn=save)
@@ -234,15 +234,14 @@ class LiveJournalAccount:
             filename = f"{self.username} - Memory Index"
             await self._save_page_assets(page, "memory_index", filename, res)
 
-        async with initialize_spinner("Navigating to Memory Index...", status=self.status) as spinner:
-            await self._scrape_task("memory_index", "memory index", save_fn=save)
+        update_status("Navigating to Memory Index...")
+        await self._scrape_task("memory_index", "memory index", save_fn=save)
 
 
     async def scrape_photos(self) -> dict:
         async def check(page, timeout) -> bool:
             if self.account_type != "personal":
-                console.print(
-                    f"    [bold][dim]ⓘ[/bold] Photo albums are not available for community accounts, skipping.[/dim]")
+                print("    [bold][dim]ⓘ[/bold] Photo albums are not available for community accounts, skipping.[/dim]")
                 return False
             return await check_for_albums(page, timeout) if page else False
 
@@ -266,14 +265,14 @@ class LiveJournalAccount:
                     album_urls.append(href)
 
             if not album_urls:
-                console.print(f"    [bold yellow]⚠[/bold yellow] [dim]No photo albums found for {self.username}.[/dim]")
+                print(f"    [bold yellow]⚠[/bold yellow] [dim]No photo albums found for {self.username}.[/dim]")
                 return
 
             photo_scraper = LiveJournalPhotoScraper(self.context, headless=True)
 
             success_count = 0
             for idx, album_url in enumerate(album_urls):
-                console.print(f"        [bold magenta]► Album {idx + 1}/{len(album_urls)}:[/bold magenta] {album_url}")
+                print(f"    [bold $text-primary]► Album {idx + 1}/{len(album_urls)}:[/bold $text-primary] {album_url}")
                 parts = album_url.split("album/")
                 album_id = parts[1].split("/")[0] if len(parts) > 1 else str(idx + 1)
                 
@@ -287,11 +286,11 @@ class LiveJournalAccount:
                 except Exception as e:
                     if "AuthenticationError" in type(e).__name__:
                         raise e
-                    console.print(f"    [bold red]✗ Failed to download album {album_url}: {e}[/bold red]")
+                    print(f"    [bold red]✗ Failed to download album {album_url}: {e}[/bold red]")
 
             res["success_count"] = success_count
             res["total_albums"] = len(album_urls)
-            console.print(f"    [bold green]✓[/bold green] [dim]Downloaded {success_count}/{len(album_urls)} albums.[/dim]")
+            print(f"    [bold green]✓[/bold green] [dim]Downloaded {success_count}/{len(album_urls)} albums.[/dim]")
 
         return await self._scrape_task("photos", "photos", check_fn=check, save_fn=save)
 
@@ -304,21 +303,21 @@ class LiveJournalAccount:
                 LiveJournalAccount.has_checked_login = True
                 LiveJournalAccount.logged_in_user = await get_logged_in(page)
                 if LiveJournalAccount.logged_in_user:
-                    console.print(f"    [bold green]✓[/bold green] [dim]Logged in as {LiveJournalAccount.logged_in_user}[/dim]")
+                    print(f"    [bold green]✓[/bold green] [dim]Logged in as {LiveJournalAccount.logged_in_user}[/dim]")
                 else:
-                    console.print(f"    [bold yellow]⚠[/bold yellow] [dim]Not logged in! Some content may be restricted.[/dim]")
+                    print("    [bold yellow]⚠[/bold yellow] [dim]Not logged in! Some content may be restricted.[/dim]")
             
             account_type = await get_account_type(page)
             if account_type is not None:
                 if account_type == "personal":
                     self.account_type = "personal"
-                    console.print(f"\n[bold magenta]:bust_in_silhouette:  Processing personal account:[/bold magenta] {self.username}")
+                    print(f"\n[bold $text-accent]👤  Processing personal account:[/bold $text-accent] {self.username}")
                 elif account_type == "community":
                     self.account_type = "community"
-                    console.print(f"\n[bold magenta]:busts_in_silhouette:  Processing community account:[/bold magenta] {self.username}")
+                    print(f"\n[bold $text-accent]👥  Processing community account:[/bold $text-accent] {self.username}")
 
         except Exception as e:
-            console.print(f"    [bold yellow]⚠[/bold yellow] [dim]Failed to extract initial user info:[/dim] {e}")
+            print(f"    [bold yellow]⚠[/bold yellow] [dim]Failed to extract initial user info:[/dim] {e}")
 
     async def process(self):
         """Executes all selected scraping tasks for the account."""
@@ -375,7 +374,7 @@ class LiveJournalAccount:
 
         for task_name, task_method in task_map.items():
             if self.results.get(task_name) == "failed":
-                console.print(f"    [bold yellow]↻ Retrying {task_name} for {self.username}...[/bold yellow]")
+                print(f"    [bold $text-warning]↻ Retrying {task_name} for {self.username}...[/bold $text-warning]")
                 
                 if task_name == "memories":
                     self.mem_count = int(self.results.get("mem_count", 0)) if self.results["profile"] != "skipped" else 0
@@ -386,9 +385,9 @@ class LiveJournalAccount:
                 if res['success']:
                     self.results[task_name] = "success"
                     improved = True
-                    console.print(f"    [bold green]✓ Retry successful for {task_name}![/bold green]")
+                    print(f"    [bold $text-success]✓ Retry successful for {task_name}![/bold $text-success]")
                 else:
-                    console.print(f"    [bold red]✗ Retry failed again for {task_name}.[/bold red]")
+                    print(f"    [bold $text-error]✗ Retry failed again for {task_name}.[/bold $text-error]")
 
         self.is_retrying = False
         return improved

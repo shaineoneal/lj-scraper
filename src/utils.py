@@ -9,7 +9,7 @@ from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page
 from rich.table import Table
 
-from .config import USERNAME_PATTERN, console
+from .config import USERNAME_PATTERN, update_status
 
 # Force standard output streams to use UTF-8 on Windows
 if hasattr(sys.stdout, 'reconfigure'):
@@ -75,7 +75,7 @@ async def compress_pdf(input_path: str):
         doc.close()
         os.replace(temp_path, input_path)
     except Exception as e:
-        console.print(f"[bold red]Failed to compress PDF {input_path}: {e}[/bold red]")
+        print(f"[bold red]Failed to compress PDF {input_path}: {e}[/bold red]")
         if doc:
             doc.close()
         if os.path.exists(temp_path):
@@ -101,13 +101,13 @@ async def download_pdf(page: Page, save_path: str) -> bool:
         return True
     except PlaywrightError as e:
         if "headless" in str(e).lower():
-            console.print(f"    [bold yellow]⚠[/bold yellow] [dim]Skipping PDF for {Path(save_path).name} (PDF generation requires headless mode).[/dim]")
+            print(f"    [bold $text-warning]⚠[/bold $text-warning] [dim]Skipping PDF for {Path(save_path).name} (PDF generation requires headless mode).[/dim]")
             return False
         else:
-            console.log(f"[bold red]Failed to download PDF for {save_path}: {e}[/bold red]")
+            print(f"    [bold $text-error]Failed to download PDF for {save_path}: {e}[/bold $text-error]")
             raise e
     except Exception as e:
-        console.log(f"[bold red]Failed to download PDF for {save_path}: {e}[/bold red]")
+        print(f"    [bold $text-error]Failed to download PDF for {save_path}: {e}[/bold $text-error]")
         raise e
 
 async def download_html(page: Page, save_path: str):
@@ -119,7 +119,7 @@ async def scroll_with_keyboard(page: Page, mem_count: int):
     no_more_entries = page.locator(".b-lenta-emptiness")
     target = mem_count if mem_count and mem_count != "0" else "unknown"
 
-    status.update(f"[bold blue]Scrolling...[/bold blue][dim] Target: [/dim][blue]{target}[/blue]")
+    update_status(f"Scrolling...[dim] Target: [$text-secondary]{target}[/$text-secondary][/dim]")
     entry_count = len(await page.locator('.b-lenta-body > article').all())
 
     while not await no_more_entries.is_visible() and entry_count < mem_count:
@@ -173,7 +173,7 @@ async def scroll_with_keyboard(page: Page, mem_count: int):
         if current_count != entry_count:
             entry_count = current_count
             loaded_str = f"{current_count}/{target}" if mem_count else str(current_count)
-            status.update(f"[bold blue]Scrolling...[/bold blue][dim] Loaded [/dim][blue]{loaded_str}[/blue] [dim]entries[/dim]")
+            update_status(f"Scrolling... [dim]Loaded [/dim][$text-secondary]{loaded_str}[/$text-secondary] [dim]entries[/dim]")
 
 async def check_for_tags(page: Page, timeout: int = 7500) -> bool:
     try:
@@ -239,7 +239,7 @@ def parse_targets(target_str: str) -> tuple[list[str], list[str]]:
             for line in lines:
                 process_item(line)
         except Exception as e:
-            console.print(f"[bold red]Failed to read input file {target_str}: {e}[/bold red]")
+            print(f"[bold red]Failed to read input file {target_str}: {e}[/bold red]")
     else:
         process_item(target_str)
 
@@ -285,8 +285,8 @@ def print_summary_table(all_users: list, elapsed_time: float):
             format_icon(user.results.get("photos", "skipped"))
         )
 
-    console.print("\n")
-    console.print(table)
+    print("\n")
+    print(table)
 
 async def get_account_type(page: Page) -> str:
     try:
@@ -297,7 +297,7 @@ async def get_account_type(page: Page) -> str:
         elif "i-ljuser-type-C" in account_type:
             return "community"
     except Exception:
-        console.print("[bold yellow]Could not determine account type.[/bold yellow]")
+        print("[bold $text-warning]Warning![/bold]Could not determine account type.[/$text-warning]")
         return ""
 
 async def get_logged_in(page) -> str:
