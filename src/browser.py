@@ -4,8 +4,9 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright
 from rich.panel import Panel
-from .config import console
+
 from .config import update_status
+
 
 async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, args: list):
     """Tries to launch bundled Chromium, falling back to system Chrome/Chromium on failure."""
@@ -27,18 +28,6 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
         else:
             print(f"[$text-warning]Default Chromium launch failed: {e}[/$text-warning]")
 
-        # 2. Try system Google Chrome
-        try:
-            status.update("[bold blue]Launching system-installed Google Chrome...[/bold blue]")
-            context = await p.chromium.launch_persistent_context(
-                user_data_dir=user_data_dir,
-                headless=headless,
-                channel="chrome",
-                args=args,
-                ignore_https_errors=True
-            )
-            return context
-            pass
     # 2. Try system Google Chrome
     try:
         update_status("Launching system-installed Google Chrome...")
@@ -50,6 +39,7 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
             ignore_https_errors=True
         )
         return context
+    except Exception:
         pass
 
         # 3. Try system Chromium
@@ -63,7 +53,7 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
                 ignore_https_errors=True
             )
             return context
-        except Exception as e:
+        except Exception:
             pass
 
     # 4. If all fail, print troubleshooting options

@@ -1,10 +1,9 @@
 import os
 import re
 import sys
-from contextlib import asynccontextmanager
 from pathlib import Path
 
-import pymupdf as fitz
+import pymupdf
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page
 from rich.table import Table
@@ -18,17 +17,7 @@ if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8')
 
 # Suppress mupdf display errors
-fitz.TOOLS.mupdf_display_errors(False)
-
-@asynccontextmanager
-async def initialize_spinner(text: str, status=None, spinner_type: str = "dots"):
-    """Initializes a Rich status spinner context or updates an existing one."""
-    if status is not None:
-        status.update(f"[bold blue]{text}[/bold blue]")
-        yield status
-    else:
-        with console.status(f"[bold blue]{text}[/bold blue]", spinner=spinner_type) as new_status:
-            yield new_status
+pymupdf.TOOLS.mupdf_display_errors(False)
 
 async def compress_pdf(input_path: str):
     """Compresses a PDF file using PyMuPDF."""
@@ -37,9 +26,9 @@ async def compress_pdf(input_path: str):
     temp_path = input_path.replace(".pdf", "-temp.pdf")
     doc = None
     try:
-        doc = fitz.open(input_path)
+        doc = pymupdf.open(input_path)
         for page in doc:
-            text_rect = fitz.Rect()
+            text_rect = pymupdf.Rect()
 
             # 1. Loop ONLY through text blocks to find where text actually exists
             for block in page.get_text("blocks"):
@@ -50,10 +39,8 @@ async def compress_pdf(input_path: str):
 
             # 2. Apply the cropbox only if valid text was detected
             if text_rect.is_valid and not text_rect.is_empty:
-                # Add a 15-point padding buffer so text doesn't touch the canvas frame
-                padding = 15
 
-                crop_rect = fitz.Rect(
+                crop_rect = pymupdf.Rect(
                     0,
                     0,
                     page.rect.width,
@@ -191,7 +178,7 @@ async def check_for_memories(page: Page, timeout: int = 7500) -> bool:
 
 async def check_for_vgifts(page: Page, timeout: int = 7500) -> bool:
     try:
-        await page.get_by_text("a virtual gift").wait_for(state="visible")
+        await page.get_by_text("a virtual gift").wait_for(state="visible", timeout=timeout)
         return len(await page.locator('.b-vgifts').all()) != 0
     except (PlaywrightError, TimeoutError):
         return False

@@ -189,8 +189,7 @@ class LiveJournalScraperApp(App):
                 yield DataTable(id="results-table", cursor_type="row", zebra_stripes=True, show_header=True, show_cursor=True, show_row_labels=False)
 
         with Horizontal(id="status-panel"):
-            with Horizontal(id="progress-container") as pc:
-
+            with Horizontal(id="progress-container"):
                 with SpinnerWidget(style="dots", id="progress-spinner") as sw:
                     sw.visible = False
 
@@ -223,8 +222,8 @@ class LiveJournalScraperApp(App):
         # Repopulate the inputs and selections from the saved initial_settings dict.
         s = self.settings
         self.query_one("#extras-target", Input).value = s.get("target", "")
-        self.query_one("#target-input-container", Grid).border_title = f"Target (Username, URL, or .txt file)"
-        self.query_one("#extras-headless-switch", Switch).value = s.get("headless", not s.get("headed", False))
+        self.query_one("#target-input-container", Grid).border_title = "Target (Username, URL, or .txt file)"
+        self.query_one("#extras-headless-switch", Switch).value = s.get("headless", True)
         self.query_one("#btn-posts", Button).styles.display = "none"
         self.query_one('#max-memories', Input).value = str(s.get("max_memories", "750"))
         self.query_one('#max-dl-memories', Input).value = str(s.get("max_dl_memories", "500"))
@@ -255,7 +254,6 @@ class LiveJournalScraperApp(App):
         except Exception:
             pass
 
-        import sys
         tasks = ["entries", "profile", "tags", "userpics", "vgifts", "memories", "photos"]
         cli_flags = [f"--{task}" for task in tasks]
         if any(flag in sys.argv for flag in cli_flags):
@@ -309,29 +307,20 @@ class LiveJournalScraperApp(App):
     def set_status(self, text: str):
         self.query_one("#status-label", Label).update(f"[b $text-primary]Status:[/b $text-primary] {text}" if text else "[b $text-primary]Status:[/b $text-primary] Ready")
 
-    def update_progress(self, description: str = None, **kwargs):
-        if description: self.query_one("#progress-status-label", Label).update(description)
-
-    def advance_progress(self, advance: float = 1):
-        pass
-
-    def hide_progress(self):
-        pass
-
     def toggle_controls(self, disabled: bool):
-        self.query("Input, Select, Switch, Button").set(disabled=disabled)
+        self.query("#sidebar, Button").exclude("#btn-quit").set(disabled=disabled)
 
-    async def start_scraping(self):
+    def start_scraping(self):
         # Core scraping flow.
         # 1. Gather all inputs from the UI.
         # 2. Reconstruct the `options` dictionary expected by the backend.
         # 3. Launch Playwright context and process each target sequentially.
-        self.toggle_controls(True)
+        self.query("#sidebar, Button").exclude("#btn-quit").set(disabled=True)
         self.query_one("#progress-spinner", SpinnerWidget).visible = True
         self.set_status("")
 
     def on_scraping_finished(self):
-        self.toggle_controls(False)
+        self.query("#sidebar, Button").set(disabled=False)
         self.query_one("#progress-spinner", SpinnerWidget).visible = False
         self.set_status("")
 
@@ -356,7 +345,7 @@ class LiveJournalScraperApp(App):
     def _start_worker(self, coro, name: str):
         if hasattr(self, "_active_worker") and self._active_worker.is_running:
             return
-        self.query_one("#progress-spinner", SpinnerWidget).visible = True
+        self.start_scraping()
         self._active_worker = self.run_worker(coro(), name=name)
 
     def start_extras_scraping_flow(self):
@@ -372,7 +361,10 @@ class LiveJournalScraperApp(App):
         self._start_worker(self.run_deps_async, "deps")
 
     async def open_file_picker(self, btn_id):
-        if opened := await self.push_screen_wait(FileOpen(title="Select Target File")):
+        if opened := await self.push_screen_wait(FileOpen(title="Select Target File", filters=Filters(
+                ("Text Files", lambda p: p.suffix.lower() == ".txt"),
+                ("All Files", lambda p: True)
+        ))):
             if btn_id == "btn-extras-files":
                 self.query_one("#extras-target", Input).value = str(opened)
             elif btn_id == "btn-posts-files":
@@ -409,32 +401,25 @@ class LiveJournalScraperApp(App):
         html_tasks = self.query_one("#html-"
                                     "selection", SelectionList).selected
         pdf_tasks = self.query_one("#pdf-selection", SelectionList).selected
-        options = {}
+        format_options = {}
         for task in self.FORMAT_TASKS:
             is_html = task in html_tasks
             is_pdf = task in pdf_tasks
-            if is_html and is_pdf:
-                options[task] = "both"
-            elif is_html:
-                options[task] = "html"
-            elif is_pdf:
-                options[task] = "pdf"
-            else:
-                options[task] = False
+            format_options[task] = "both" if is_html and is_pdf else "html" if is_html else "pdf" if is_pdf else False
 
         settings = {
             "user_data_dir": user_data_dir,
-            "delay": parse_num("#delay", 0.0, float),
+            "delay": parse_num("#delay", 3.0, float),
             "max_memories": parse_num("#max-memories", 750, int),
             "max_dl_memories": parse_num("#max-dl-memories", 500, int),
             "headless": self.query_one("#extras-headless-switch", Switch).value,
-            **options
+            **format_options
         }
 
         profile_targets, album_targets = parse_targets(target)
         if not profile_targets and not album_targets:
-            log.write("[bold red]Invalid target. Provide URL, username, or .txt file.[/bold red]")
             print("[$text-warning][b]Error: [/b]Invalid target. Provide URL, username, or .txt file.[/$text-warning]")
+            self.on_scraping_finished()
 
         start_time = asyncio.get_event_loop().time()
         all_results = []

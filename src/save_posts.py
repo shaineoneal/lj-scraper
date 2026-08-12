@@ -195,52 +195,8 @@ body > article > div.b-singlepost-qrcode.ng-isolate-scope{display: none;}
 """
 
 # ==============================================================================
-# IMPORTS & COMPATIBILITY LAYER
-# ==============================================================================
-
-async def resolve_proxy(proxy_str):
-    if not proxy_str or proxy_str.lower() in ("none", "null", ""):
-        return None
-    if proxy_str.lower() == "auto":
-        console.print("[yellow]Warning: 'auto' proxy is not supported, proceeding without proxy.[/yellow]")
-        return None
-    server = proxy_str
-    username = None
-    password = None
-    match = re.match(r"^(https?|socks5)://([^:]+):([^@]+)@(.+)$", proxy_str, re.IGNORECASE)
-    if match:
-        proto, user, pwd, host = match.groups()
-        server = f"{proto}://{host}"
-        username = user
-        password = pwd
-
-    res = {"server": server}
-    if username:
-        res["username"] = username
-    if password:
-        res["password"] = password
-    return res
-
-
-# ==============================================================================
 # DECOUPLED BUSINESS LOGIC FUNCTIONS
 # ==============================================================================
-
-def update_status(text: str) -> None:
-    """Update the current status if the TUI has hooked console.update_status."""
-    updater = getattr(console, "update_status", None)
-    if callable(updater):
-        updater(text)
-    elif text:
-        console.print(f"[dim]{text}[/dim]")
-
-
-def status_context(text: str):
-    status_factory = getattr(console, "status", None)
-    if callable(status_factory):
-        return status_factory(text, spinner="dots")
-    return nullcontext()
-
 
 def extract_urls_from_excel(excel_file_path: Path | str) -> list[str]:
     """

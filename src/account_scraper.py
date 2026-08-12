@@ -24,16 +24,18 @@ class LiveJournalAccount:
     has_checked_login = False
     logged_in_user = None
 
-    def __init__(self, context, username: str, options: dict):
+    def __init__(self, context, username: str, settings):
         self.context = context
         self.username = username
         self.account_type = None
-        self.options = options
+        self.settings = settings
+        self.format_options = settings.get("options")
         import random
         self.jitter = random.uniform(0.5, 1.5) * settings.get("delay", 3.0) # in seconds
         self.user_dir = Path(f"output/{username}")
         self.is_retrying = False
-        self.timeout = 30   #TODO: Fix
+        self.timeout = settings.get("timeout", 30) if not self.is_retrying else settings.get("timeout", 30) * 2.25
+        self.timeout_ms = int(self.timeout * 1000)
         self.status = None
         self.mem_count = 0
 
@@ -68,15 +70,13 @@ class LiveJournalAccount:
         import asyncio
         await asyncio.sleep(self.jitter)
 
-        timeout_ms = int(self.timeout * 2.25 * 1000) if self.is_retrying else int(self.timeout * 1000)
-
         for attempt in range(max_attempts):
             try:
                 update_status(f"Navigating to {url} (Attempt {attempt + 1}/{max_attempts})...")
 
                 page = await self.context.new_page()
-                page.set_default_timeout(timeout_ms)
-                page.set_default_navigation_timeout(timeout_ms)
+                page.set_default_timeout(self.timeout_ms)
+                page.set_default_navigation_timeout(self.timeout_ms)
                 resp = await page.goto(url, wait_until="domcontentloaded")
                 await page.wait_for_timeout(2000)
 
@@ -134,7 +134,7 @@ class LiveJournalAccount:
         save_path = self.user_dir / filename
 
         # Determine what to save for this task
-        task_option = self.options.get(task_name)
+        task_option = self.format_options.get(task_name)
         if task_option is False or task_option is None:
             print(f"    [bold $text-warning]⚠[/bold $text-warning] [dim]Skipping saving assets for {task_name} (disabled).[/dim]")
             return
@@ -325,33 +325,33 @@ class LiveJournalAccount:
         output.mkdir(exist_ok=True)
         self.user_dir.mkdir(exist_ok=True)
 
-        if self.options.get("entries"):
+        if self.format_options.get("entries"):
             res = await self.scrape_entries()
             self.results["entries"] = "success" if res['success'] else "failed"
 
-        if self.options.get("profile"):
+        if self.format_options.get("profile"):
             res = await self.scrape_profile()
             self.results["profile"] = "success" if res['success'] else "failed"
             self.results["mem_count"] = res.get("mem_count", "0")
 
-        if self.options.get("tags"):
+        if self.format_options.get("tags"):
             res = await self.scrape_tags()
             self.results["tags"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
 
-        if self.options.get("userpics"):
+        if self.format_options.get("userpics"):
             res = await self.scrape_userpics()
             self.results["userpics"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
 
-        if self.options.get("vgifts"):
+        if self.format_options.get("vgifts"):
             res = await self.scrape_vgifts()
             self.results["vgifts"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
 
-        if self.options.get("memories"):
+        if self.format_options.get("memories"):
             self.mem_count = int(self.results.get("mem_count", 0)) if self.results["profile"] != "skipped" else 0
             res = await self.scrape_memories()
             self.results["memories"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
 
-        if self.options.get("photos"):
+        if self.format_options.get("photos"):
             res = await self.scrape_photos()
             self.results["photos"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
 

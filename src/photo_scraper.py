@@ -126,13 +126,6 @@ class LiveJournalPhotoScraper:
         except (PlaywrightError, TimeoutError):
             desc_text = ""
 
-        console.print(Panel(
-            f"[bold]Title:[/bold] {title}\n[bold]Expected Photos:[/bold] {count_text}\n[bold]Description:[/bold] {desc_text}",
-            title="[bold green]Album Detected[/bold green]",
-            border_style="green",
-            expand=False
-        ))
-
         try:
             expected_count = int(count_text)
         except ValueError:
@@ -171,7 +164,7 @@ class LiveJournalPhotoScraper:
                     retries = 0
                     last_height = new_height
 
-    async def _download_images(self, page: Page, url: str, metadata: dict, output_dir: Path = None) -> dict:
+    async def _download_images(self, page: Page, url: str, metadata: dict, output_dir: Path) -> dict:
         """Extracts src attributes and downloads images with a progress bar."""
         parts = url.split(r"album/")
         username = url.split("//")[1].split(".")[0]
@@ -199,17 +192,16 @@ class LiveJournalPhotoScraper:
 
             update_status("Downloading...")
 
-                for body in containers:
+            for body in containers:
+                try:
+                    update_status(f"Processing image {stats['downloaded'] + stats['failed'] + 1}/{len(containers)}...")
                     img = await body.query_selector('img')
                     if not img:
                         stats["failed"] += 1
-                        progress.advance(task)
                         continue
-
                     img_url = await img.get_attribute('src')
                     if not img_url:
                         stats["failed"] += 1
-                        progress.advance(task)
                         continue
 
                     # Rewrite to fetch original image size suffix
@@ -219,7 +211,7 @@ class LiveJournalPhotoScraper:
                         ext_start = suffix.find(".")
                         ext = suffix[ext_start:] if ext_start != -1 else ""
                         img_url = parts_img[0] + "_original" + ext
-                    
+
                     img_filename = Path(img_url).name
                     if not img_filename or "." not in img_filename:
                         img_filename = f"image_{stats['downloaded'] + stats['failed']}.jpg"
@@ -229,8 +221,6 @@ class LiveJournalPhotoScraper:
                     desc_text = await desc_el.inner_text() if desc_el else ""
                     desc_text = desc_text.strip()
 
-                    progress.update(task, description=f"[cyan]Downloading:[/cyan] [green]{img_filename}[/green]")
-
                     success = await self._fetch_and_save_image(page, img_url, dir_path / img_filename)
 
                     if success:
@@ -238,9 +228,10 @@ class LiveJournalPhotoScraper:
                         writer.writerow([album_id, metadata.get("title", ""), metadata.get("description", ""), img_url, desc_text])
                     else:
                         stats["failed"] += 1
-                        progress.update(task, description=f"[red]Failed to download:[/red] [yellow]{img_filename}[/yellow]")
 
-                    progress.advance(task)
+                except Exception as e:
+                    print(f"[bold $text-error]Error during image download: {e}[/bold $text-error]")
+                    update_status("[$text-error]Album download encountered errors.[/$text-error]")
 
         update_status("[$text-success]Album download complete![/$text-success]")
 
@@ -277,14 +268,3 @@ class LiveJournalPhotoScraper:
                     print(f"[bold $text-error]Failed to download {img_url}: {e}[/bold $text-error]")
 
         return False
-
-    def _print_album_summary(self, url: str, stats: dict):
-        console.print(Panel(
-            f"[bold]Target URL:[/bold] {url}\n"
-            f"[bold]Saved Directory:[/bold] {stats.get('dir')}\n"
-            f"[bold]Successfully Downloaded:[/bold] [green]{stats.get('downloaded')}[/green]\n"
-            f"[bold]Failed:[/bold] [red]{stats.get('failed')}[/red]",
-            title="[bold blue]Album Processing Complete[/bold blue]",
-            border_style="blue",
-            expand=False
-        ))

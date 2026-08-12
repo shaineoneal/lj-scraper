@@ -38,6 +38,9 @@ class JSONConfigFileParser(configargparse.ConfigFileParser):
                 result[normalized_key] = str(v)
         return result
 
+    def error(self, message):
+        raise configargparse.ConfigFileParserException(message)
+
 async def main_async():
     parser = configargparse.ArgumentParser(
         description="Scrape and download LiveJournal accounts and photo albums.",

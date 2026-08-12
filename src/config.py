@@ -1,6 +1,5 @@
 import json
 import re
-from contextlib import nullcontext
 from pathlib import Path
 
 from rich.console import Console
@@ -18,7 +17,6 @@ def update_status(text: str) -> None:
 CONFIG_FILE = Path("config.json")
 
 DEFAULT_SETTINGS = {
-    "target": "",
     "user_data_dir": "user_profile",
     "max_memories": 750,
     "max_dl_memories": 500,
@@ -37,7 +35,6 @@ def load_config(path: Path = CONFIG_FILE) -> dict:
     """Loads configuration from config file.
     If the file doesn't exist, it creates a default template.
     """
-    import copy
     path = Path(path) if path else CONFIG_FILE
     if not path.exists():
         try:
