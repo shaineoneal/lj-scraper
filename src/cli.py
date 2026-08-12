@@ -1,21 +1,11 @@
 import argparse
 import asyncio
 import json
-import os
 import sys
-import time
-from pathlib import Path
 
 import configargparse
-from playwright.async_api import async_playwright
-from rich.panel import Panel
 
-from .config import console, DEFAULT_USER_DATA_DIR, DEFAULT_SETTINGS, load_config
-from .browser import run_login_flow, launch_browser_with_fallback
-from .account_scraper import LiveJournalAccount
-from .photo_scraper import LiveJournalPhotoScraper
-from .utils import parse_targets, print_summary_table
-
+from .config import DEFAULT_USER_DATA_DIR, load_config
 
 def str2bool(v):
     if isinstance(v, bool):

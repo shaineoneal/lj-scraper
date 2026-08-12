@@ -1,6 +1,7 @@
-import os
 import asyncio
+import os
 from pathlib import Path
+
 from playwright.async_api import async_playwright
 from rich.panel import Panel
 from .config import console

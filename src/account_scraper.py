@@ -1,23 +1,20 @@
-import os
-from os import mkdir
 from pathlib import Path
-from playwright.async_api import Page, Error as PlaywrightError
-from rich.spinner import Spinner
 
-from .config import console, URL_SUFFIX, load_config
+from playwright.async_api import Page
+
+from .config import URL_SUFFIX, load_config, status_context
 from .utils import (
-    initialize_spinner,
-    download_pdf,
-    download_html,
-    compress_pdf,
-    scroll_with_keyboard,
-    check_for_tags,
-    check_for_memories,
-    check_for_vgifts,
-    check_for_userpics,
     check_for_albums,
+    check_for_memories,
+    check_for_tags,
+    check_for_userpics,
+    check_for_vgifts,
+    compress_pdf,
+    download_html,
+    download_pdf,
     get_account_type,
-    get_logged_in
+    get_logged_in,
+    scroll_with_keyboard,
 )
 
 settings = load_config()
@@ -70,11 +67,10 @@ class LiveJournalAccount:
         """Navigates to the given URL with retries and returns the active page object."""
         import asyncio
         await asyncio.sleep(self.jitter)
-            
-        attempt = 0
+
         timeout_ms = int(self.timeout * 2.25 * 1000) if self.is_retrying else int(self.timeout * 1000)
 
-        while attempt < max_attempts:
+        for attempt in range(max_attempts):
             try:
                 status_or_spinner.update(f"[bold blue]Navigating to {url} (Attempt {attempt + 1}/{max_attempts})...[/bold blue]", spinner="dots")
 
@@ -248,12 +244,11 @@ class LiveJournalAccount:
                 console.print(
                     f"    [bold][dim]ⓘ[/bold] Photo albums are not available for community accounts, skipping.[/dim]")
                 return False
-
             return await check_for_albums(page, timeout) if page else False
 
-        async def save(page, spinner, res):
+        async def save(page, res):
             filename = f"{self.username} - Photo Albums"
-            await self._save_page_assets(page, spinner, "photos", filename, res)
+            await self._save_page_assets(page, "photos", filename, res)
 
             # Extract album links
             from .photo_scraper import LiveJournalPhotoScraper
@@ -274,8 +269,8 @@ class LiveJournalAccount:
                 console.print(f"    [bold yellow]⚠[/bold yellow] [dim]No photo albums found for {self.username}.[/dim]")
                 return
 
-            photo_scraper = LiveJournalPhotoScraper(self.context, headless=True, delay=self.delay)
-            
+            photo_scraper = LiveJournalPhotoScraper(self.context, headless=True)
+
             success_count = 0
             for idx, album_url in enumerate(album_urls):
                 console.print(f"        [bold magenta]► Album {idx + 1}/{len(album_urls)}:[/bold magenta] {album_url}")

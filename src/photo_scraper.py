@@ -1,18 +1,27 @@
-import csv
 import asyncio
+import csv
 from pathlib import Path
-from urllib.parse import unquote
-from playwright.async_api import Page, Error as PlaywrightError, expect
-from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
-from .config import console, SEL_HEADER, SEL_TITLE, SEL_COUNT, SEL_DESC, SEL_CONTAINER, SEL_PHOTO_DESC
+
+from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import Page, expect
+
+from .config import (
+    SEL_CONTAINER,
+    SEL_COUNT,
+    SEL_DESC,
+    SEL_HEADER,
+    SEL_PHOTO_DESC,
+    SEL_TITLE,
+    console,
+)
+
 
 class AuthenticationError(Exception):
     """Custom exception raised when LiveJournal returns a 412 status (auth required)."""
     pass
 
 class LiveJournalPhotoScraper:
-    def __init__(self, context, headless: bool = True, image_timeout_ms: int = 15000, max_retries: int = 3, delay: float = 0.0, status=None):
+    def __init__(self, context, headless: bool = True, image_timeout_ms: int = 15000,):
         self.context = context
         self.headless = headless
         self.image_timeout = image_timeout_ms
@@ -20,7 +29,7 @@ class LiveJournalPhotoScraper:
         self.delay = delay
         self.status = status
 
-    async def scrape_album(self, url: str, output_dir: Path = None) -> bool:
+    async def scrape_album(self, url: str, output_dir = None) -> bool:
         """Handles the end-to-end flow for a single album URL."""
         if not url.startswith(('http://', 'https://')):
             console.log(f"[bold red]Invalid URL skipped:[/bold red] {url}")

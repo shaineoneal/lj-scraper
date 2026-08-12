@@ -1,19 +1,20 @@
 import asyncio
-import os
 import random
 import re
 import sys
 from pathlib import Path
 
-import configargparse
 from rich.panel import Panel
 from rich.table import Table
 
 from src.browser import launch_browser_with_fallback
-from .config import console, DEFAULT_USER_DATA_DIR
 
-from src.account_scraper import settings
-from src.cli import JSONConfigFileParser
+from .config import (
+    DEFAULT_USER_DATA_DIR,
+    console,
+    load_config,
+    status_context,
+)
 
 # Add the parent directory of this file to the Python path if running as a script
 if __name__ == "__main__" and not __package__:
@@ -21,8 +22,6 @@ if __name__ == "__main__" and not __package__:
     __package__ = "src"
 
 from openpyxl import load_workbook
-from openpyxl.cell import Cell
-from openpyxl.worksheet.worksheet import Worksheet
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page, async_playwright
 

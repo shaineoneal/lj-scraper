@@ -1,7 +1,8 @@
-import os
-import re
 import json
+import re
+from contextlib import nullcontext
 from pathlib import Path
+
 from rich.console import Console
 
 console = Console()
@@ -24,7 +25,7 @@ DEFAULT_SETTINGS = {
     "photos": "both"
 }
 
-def load_config(path: Path = CONFIG_FILE) -> dict[str, str | bool]:
+def load_config(path: Path = CONFIG_FILE) -> dict:
     """Loads configuration from config file.
     If the file doesn't exist, it creates a default template.
     """

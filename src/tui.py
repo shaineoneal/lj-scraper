@@ -1,24 +1,24 @@
+import builtins
 import inspect
 import os
+import re
 import sys
 import asyncio
-from pathlib import Path
 
 from playwright.async_api import async_playwright
-from rich.console import RenderableType
 from rich.spinner import Spinner
 from rich.text import Text
+import rich.rule
 from textual import on, work
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll, Right, Grid
-from textual.events import Click
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll, Grid
+from textual.content import Content
 from textual.reactive import reactive
-from textual.widgets import Header, Footer, Input, Button, Switch, Select, Label, RichLog, ProgressBar, Static, \
-    DataTable, SelectionList, LoadingIndicator, Rule, Collapsible, OptionList, Checkbox, TabbedContent, TabPane, \
-    tabbed_content
+from textual.widgets import Header, Footer, Input, Button, Switch, Label, RichLog, Static, \
+    DataTable, SelectionList, Rule, Collapsible, TabbedContent, TabPane
 
-from textual_fspicker import FileOpen
+from textual_fspicker import FileOpen, Filters
 
 import src.config
 import rich.progress

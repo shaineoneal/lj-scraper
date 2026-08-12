@@ -1,14 +1,15 @@
 import os
 import re
 import sys
-from pathlib import Path
 from contextlib import asynccontextmanager
+from pathlib import Path
+
 import pymupdf as fitz
-from playwright.async_api import Page, expect, Error as PlaywrightError
-from rich.spinner import Spinner
-from rich.live import Live
+from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import Page
 from rich.table import Table
-from .config import console, USERNAME_PATTERN
+
+from .config import USERNAME_PATTERN, console
 
 # Force standard output streams to use UTF-8 on Windows
 if hasattr(sys.stdout, 'reconfigure'):
