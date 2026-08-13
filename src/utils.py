@@ -104,12 +104,20 @@ async def download_html(page: Page, save_path: str):
 async def scroll_with_keyboard(page: Page, mem_count: int):
     """Scrolls down using the lazyloader/footer or keyboard to load all dynamic content/entries."""
     no_more_entries = page.locator(".b-lenta-emptiness")
-    target = mem_count if mem_count and mem_count != "0" else "unknown"
 
-    update_status(f"Scrolling...[dim] Target: [$text-secondary]{target}[/$text-secondary][/dim]")
+    # Cast mem_count to int immediately to prevent bad string/numeric comparisons
+    try:
+        target_count = int(mem_count) if mem_count else 0
+    except (ValueError, TypeError):
+        target_count = 0
+
+    target_str = target_count if target_count > 0 else "unknown"
+
+    update_status(f"Scrolling...[dim] Target: [$text-secondary]{target_str}[/$text-secondary][/dim]")
     entry_count = len(await page.locator('.b-lenta-body > article').all())
 
-    while not await no_more_entries.is_visible() and entry_count < mem_count:
+    # ensure target_count is greater than 0 so the loop condition evaluates safely
+    while not await no_more_entries.is_visible() and (target_count == 0 or entry_count < target_count):
         # Define candidate elements that represent the bottom of the active content or the loader itself.
         # We scroll these into view so they are visible on screen, triggering the lazyloader,
         # without scrolling past them into the blank whitespace at the very end of the page.
@@ -159,7 +167,7 @@ async def scroll_with_keyboard(page: Page, mem_count: int):
 
         if current_count != entry_count:
             entry_count = current_count
-            loaded_str = f"{current_count}/{target}" if mem_count else str(current_count)
+            loaded_str = f"{current_count}/{target_str}" if mem_count else str(current_count)
             update_status(f"Scrolling... [dim]Loaded [/dim][$text-secondary]{loaded_str}[/$text-secondary] [dim]entries[/dim]")
 
 async def check_for_tags(page: Page, timeout: int = 7500) -> bool:
