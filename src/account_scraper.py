@@ -75,8 +75,6 @@ class LiveJournalAccount:
                 update_status(f"Navigating to {url} (Attempt {attempt + 1}/{max_attempts})...")
 
                 page = await self.context.new_page()
-                page.set_default_timeout(self.timeout_ms)
-                page.set_default_navigation_timeout(self.timeout_ms)
                 resp = await page.goto(url, wait_until="domcontentloaded")
                 await page.wait_for_timeout(2000)
 
@@ -110,11 +108,9 @@ class LiveJournalAccount:
         update_status(f"Preparing to scrape {label}...")
         try:
             page = await self._fetch_page(url)
-            update_status("Checking if page exists...")
-            if check_fn and not await check_fn(page, int(self.jitter * 1000)):
-                if task_name == "photos" and self.account_type == "community":
-                    return result
-                print(f"    [bold $text-warning]⚠[/bold $text-warning] [dim]No {label} found for {self.username}, skipping.[/dim]")
+            update_status(f"Checking if {label.capitalize()} page exists...")
+            if check_fn and not await check_fn(page, self.timeout_ms):
+                print(f"    [bold $warning]⚠[/bold $warning] [dim]No {label} found for {self.username}, skipping.[/dim]")
                 return result
 
             if save_fn:

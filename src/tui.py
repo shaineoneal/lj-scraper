@@ -424,18 +424,21 @@ class LiveJournalScraperApp(App):
 
         start_time = asyncio.get_event_loop().time()
         all_results = []
+        if len(profile_targets) > 1:
+            print(f"[$text-secondary]Preparing to scrape {len(profile_targets)} LJ accounts...[/$text-secondary]\n")
+        elif len(profile_targets) == 1:
+            print(f"[$text-secondary]Preparing to scrape LJ account:[/$text-secondary][$text-accent] {profile_targets[0]}[/$text-accent]\n")
+        self.set_status("[$text-primary]Launching browser context...[/$text-primary]")
 
         try:
             async with async_playwright() as p:
-                if len(profile_targets) > 1:
-                    print(f"[$text-secondary]Preparing to scrape {len(profile_targets)} LJ accounts...[/$text-secondary]\n")
-                elif len(profile_targets) == 1:
-                    print(f"[$text-secondary]Preparing to scrape LJ account:[/$text-secondary][$text-accent] {profile_targets[0]}[/$text-accent]\n")
-                self.set_status("[$text-primary]Launching browser context...[/$text-primary]")
                 context = await launch_browser_with_fallback(
                     p, user_data_dir=user_data_dir, headless=self.query_one("#extras-headless-switch", Switch).value,
                     args=["--no-sandbox", "--disable-dev-shm-usage"]
                 )
+
+                context.set_default_timeout(self.shared_timeout * 1000)  # Convert seconds to milliseconds
+                context.set_default_navigation_timeout(self.shared_timeout * 1000)
 
                 try:
                     for username in profile_targets:
