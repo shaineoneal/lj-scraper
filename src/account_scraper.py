@@ -106,6 +106,11 @@ class LiveJournalAccount:
         url = self.urls[task_name]
         page = None
         update_status(f"Preparing to scrape {label}...")
+
+        if task_name == "photos" and self.account_type == "community":
+            print(f"    [bold][dim]ⓘ[/bold] Photo albums are not available for community accounts, skipping.[/dim]")
+            return result
+        
         try:
             page = await self._fetch_page(url)
             update_status(f"Checking if {label.capitalize()} page exists...")

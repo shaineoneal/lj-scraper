@@ -442,8 +442,9 @@ class LiveJournalScraperApp(App):
 
                 try:
                     for username in profile_targets:
+                        settings.update({"index": profile_targets.index(username) + 1, "total": len(profile_targets)})
                         self.set_status(f"Processing LJ account: {username}")
-                        lj_user = LiveJournalAccount(context, username, options)
+                        lj_user = LiveJournalAccount(context, username, settings)
                         await lj_user.process()
                         all_results.append(lj_user)
 
@@ -453,13 +454,6 @@ class LiveJournalScraperApp(App):
                         for user in failed_users:
                             self.set_status(f"Retrying: {user.username}")
                             await user.retry_failed(status=None)
-
-                    if album_targets:
-                        photo_scraper = LiveJournalPhotoScraper(context, headless=headless, delay=delay, status=None)
-                        for idx, album_url in enumerate(album_targets):
-                            self.set_status(f"Processing Album {idx + 1}/{len(album_targets)}")
-                            await photo_scraper.scrape_album(album_url)
-
                 finally:
                     await context.close()
 
@@ -549,8 +543,7 @@ class LiveJournalScraperApp(App):
         print(f"\n[bold $text-success]Done! Total elapsed time: {elapsed_time:.1f}s[/bold $text-success]\n")
 
     async def run_deps_async(self):
-        log = self.query_one("#log-view", RichLog)
-        log.clear()
+        self._clear_log()
         self.set_status("Installing dependencies...")
         print("[bold $text-primary]Installing Playwright Linux dependencies...[/bold $text-primary]\n")
         try:
