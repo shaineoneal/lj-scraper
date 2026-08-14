@@ -23,11 +23,8 @@ class AuthenticationError(Exception):
 class LiveJournalPhotoScraper:
     def __init__(self, context, headless: bool = True, image_timeout_ms: int = 15000,):
         self.context = context
-        self.headless = headless
-        self.image_timeout = image_timeout_ms
-        self.max_retries = max_retries
-        self.delay = delay
-        self.status = status
+        self.settings = settings
+        self.max_retries = 3
 
     async def scrape_album(self, url: str, output_dir = None) -> bool:
         """Handles the end-to-end flow for a single album URL."""
@@ -239,12 +236,10 @@ class LiveJournalPhotoScraper:
 
     async def _fetch_and_save_image(self, page: Page, img_url: str, save_path: Path) -> bool:
         """Handles the HTTP request, retries, and file writing for a single image."""
-        if self.delay > 0:
-            await asyncio.sleep(self.delay)
-            
+
         for attempt in range(self.max_retries):
             try:
-                resp = await page.request.get(img_url, timeout=self.image_timeout)
+                resp = await page.request.get(img_url, timeout=self.settings.get("timeout", 30) * 1000)
 
                 if resp.status == 412:
                     raise AuthenticationError("Precondition Failed (412). You might need to log in to access these photos.")

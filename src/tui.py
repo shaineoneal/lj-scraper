@@ -230,7 +230,7 @@ class LiveJournalScraperApp(App):
         self.query_one('#posts-target-input-container', Container).border_title = "Target (Single Post URL, .xlsm, or .txt file)"
         self.shared_delay = str(s.get("delay", "0.0"))
         self.shared_user_data_dir = s.get("user_data_dir", "user_profile")
-        self.shared_timeout = str(s.get("timeout", "30.0"))
+        self.shared_timeout = int(s.get("timeout", "30.0"))
         self.shared_max_memories = str(s.get("max_memories", "750"))
         self.shared_max_dl_memories = str(s.get("max_dl_memories", "500"))
 
