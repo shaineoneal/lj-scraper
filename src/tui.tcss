@@ -116,7 +116,7 @@ SpinnerWidget {
 }
 
 /* Inputs and form fields */
-#target-input-container {
+#extras-target-input-container, #posts-target-input-container {
     layout: grid;
     grid-size: 2;
     grid-columns: 1fr 8;
@@ -185,4 +185,9 @@ Switch > .switch--slider {
 
 Switch.-on > .switch--slider {
     color: $success-darken-1;
+}
+
+#log-view {
+    color: $text;
+    padding-left: 2;
 }

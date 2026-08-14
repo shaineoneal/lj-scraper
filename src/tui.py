@@ -112,7 +112,7 @@ class LiveJournalScraperApp(App):
             with TabbedContent(id="sidebar", initial="tab-extras"):
                 with TabPane("Extras", id="tab-extras"):
                     with VerticalScroll():
-                        with Grid(id="target-input-container"):
+                        with Grid(id="extras-target-input-container"):
                             yield Input(placeholder="e.g. news, target_list.txt", id="extras-target")
                             yield Button("🗀", id="btn-extras-files")
                         with Horizontal(id="extras-headless-container"):
@@ -159,7 +159,7 @@ class LiveJournalScraperApp(App):
 
                 with TabPane("Posts", id="tab-posts"):
                     with VerticalScroll():
-                        with Container(id="target-input-container"):
+                        with Container(id="posts-target-input-container"):
                             yield Input(placeholder="e.g. news, target_list.txt", id="posts-target")
                             yield Button("🗀", classes="open-file-picker", id="btn-posts-files")
                         with Horizontal(id="headless-container"):
@@ -222,11 +222,12 @@ class LiveJournalScraperApp(App):
         # Repopulate the inputs and selections from the saved initial_settings dict.
         s = self.settings
         self.query_one("#extras-target", Input).value = s.get("target", "")
-        self.query_one("#target-input-container", Grid).border_title = "Target (Username, URL, or .txt file)"
+        self.query_one("#extras-target-input-container", Grid).border_title = "Target (Username, URL, or .txt file)"
         self.query_one("#extras-headless-switch", Switch).value = s.get("headless", True)
         self.query_one("#btn-posts", Button).styles.display = "none"
         self.query_one('#max-memories', Input).value = str(s.get("max_memories", "750"))
         self.query_one('#max-dl-memories', Input).value = str(s.get("max_dl_memories", "500"))
+        self.query_one('#posts-target-input-container', Container).border_title = "Target (Single Post URL, .xlsm, or .txt file)"
         self.shared_delay = str(s.get("delay", "0.0"))
         self.shared_user_data_dir = s.get("user_data_dir", "user_profile")
         self.shared_timeout = str(s.get("timeout", "30.0"))
