@@ -2,13 +2,13 @@ import os
 import re
 import sys
 from pathlib import Path
-from contextlib import asynccontextmanager
-import pymupdf as fitz
-from playwright.async_api import Page, expect, Error as PlaywrightError
-from rich.spinner import Spinner
-from rich.live import Live
+
+import pymupdf
+from playwright.async_api import Error as PlaywrightError, expect
+from playwright.async_api import Page
 from rich.table import Table
-from .config import console, USERNAME_PATTERN
+
+from .config import USERNAME_PATTERN, update_status
 
 # Force standard output streams to use UTF-8 on Windows
 if hasattr(sys.stdout, 'reconfigure'):
@@ -17,17 +17,7 @@ if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8')
 
 # Suppress mupdf display errors
-fitz.TOOLS.mupdf_display_errors(False)
-
-@asynccontextmanager
-async def initialize_spinner(text: str, status=None, spinner_type: str = "dots"):
-    """Initializes a Rich status spinner context or updates an existing one."""
-    if status is not None:
-        status.update(f"[bold blue]{text}[/bold blue]")
-        yield status
-    else:
-        with console.status(f"[bold blue]{text}[/bold blue]", spinner=spinner_type) as new_status:
-            yield new_status
+pymupdf.TOOLS.mupdf_display_errors(False)
 
 async def compress_pdf(input_path: str):
     """Compresses a PDF file using PyMuPDF."""
@@ -36,9 +26,9 @@ async def compress_pdf(input_path: str):
     temp_path = input_path.replace(".pdf", "-temp.pdf")
     doc = None
     try:
-        doc = fitz.open(input_path)
+        doc = pymupdf.open(input_path)
         for page in doc:
-            text_rect = fitz.Rect()
+            text_rect = pymupdf.Rect()
 
             # 1. Loop ONLY through text blocks to find where text actually exists
             for block in page.get_text("blocks"):
@@ -49,10 +39,8 @@ async def compress_pdf(input_path: str):
 
             # 2. Apply the cropbox only if valid text was detected
             if text_rect.is_valid and not text_rect.is_empty:
-                # Add a 15-point padding buffer so text doesn't touch the canvas frame
-                padding = 15
 
-                crop_rect = fitz.Rect(
+                crop_rect = pymupdf.Rect(
                     0,
                     0,
                     page.rect.width,
@@ -74,7 +62,7 @@ async def compress_pdf(input_path: str):
         doc.close()
         os.replace(temp_path, input_path)
     except Exception as e:
-        console.print(f"[bold red]Failed to compress PDF {input_path}: {e}[/bold red]")
+        print(f"[bold red]Failed to compress PDF {input_path}: {e}[/bold red]")
         if doc:
             doc.close()
         if os.path.exists(temp_path):
@@ -91,6 +79,7 @@ async def download_pdf(page: Page, save_path: str) -> bool:
         }''')
         if os.path.exists(save_path):
             os.remove(save_path)
+        # noinspection PyTypeChecker
         await page.pdf(
             path=save_path,
             print_background=True,
@@ -100,28 +89,41 @@ async def download_pdf(page: Page, save_path: str) -> bool:
         return True
     except PlaywrightError as e:
         if "headless" in str(e).lower():
-            console.print(f"    [bold yellow]⚠[/bold yellow] [dim]Skipping PDF for {Path(save_path).name} (PDF generation requires headless mode).[/dim]")
+            print(f"    [bold $warning]⚠[/bold $warning] [dim]Skipping PDF for {Path(save_path).name} (PDF generation requires headless mode).[/dim]")
             return False
         else:
-            console.log(f"[bold red]Failed to download PDF for {save_path}: {e}[/bold red]")
+            print(f"    [bold $error]Failed to download PDF for {save_path}: {e}[/bold $error]")
             raise e
     except Exception as e:
-        console.log(f"[bold red]Failed to download PDF for {save_path}: {e}[/bold red]")
+        print(f"    [bold $error]Failed to download PDF for {save_path}: {e}[/bold $error]")
         raise e
 
 async def download_html(page: Page, save_path: str):
     """Downloads the current page HTML content."""
     Path(save_path).write_text(await page.content(), encoding="utf-8")
 
-async def scroll_with_keyboard(page: Page, status, mem_count: int):
+async def scroll_with_keyboard(page: Page, mem_count: int, max_memories: int):
+    if mem_count > max_memories:
+        print(
+            f"    [bold $warning]⚠[/bold $warning] [dim]Memory count ({mem_count}) exceeds max_memories, collecting the index and the first {max_memories} memories..."
+        )
+
     """Scrolls down using the lazyloader/footer or keyboard to load all dynamic content/entries."""
     no_more_entries = page.locator(".b-lenta-emptiness")
-    target = mem_count if mem_count and mem_count != "0" else "unknown"
 
-    status.update(f"[bold blue]Scrolling...[/bold blue][dim] Target: [/dim][blue]{target}[/blue]")
+    # Cast mem_count to int immediately to prevent bad string/numeric comparisons
+    try:
+        target_count = int(mem_count) if mem_count else 0
+    except (ValueError, TypeError):
+        target_count = 0
+
+    target_str = target_count if target_count > 0 else "unknown"
+
+    update_status(f"Scrolling...[dim] Target: [$text-secondary]{target_str}[/$text-secondary][/dim]")
     entry_count = len(await page.locator('.b-lenta-body > article').all())
 
-    while not await no_more_entries.is_visible() and entry_count < mem_count:
+    # ensure target_count is greater than 0 so the loop condition evaluates safely
+    while not await no_more_entries.is_visible() and (target_count == 0 or entry_count < target_count):
         # Define candidate elements that represent the bottom of the active content or the loader itself.
         # We scroll these into view so they are visible on screen, triggering the lazyloader,
         # without scrolling past them into the blank whitespace at the very end of the page.
@@ -171,42 +173,49 @@ async def scroll_with_keyboard(page: Page, status, mem_count: int):
 
         if current_count != entry_count:
             entry_count = current_count
-            loaded_str = f"{current_count}/{target}" if mem_count else str(current_count)
-            status.update(f"[bold blue]Scrolling...[/bold blue][dim] Loaded [/dim][blue]{loaded_str}[/blue] [dim]entries[/dim]")
+            loaded_str = f"{current_count}/{target_str}" if mem_count else str(current_count)
+            update_status(f"Scrolling... [dim]Loaded [/dim][$text-secondary]{loaded_str}[/$text-secondary] [dim]entries[/dim]")
 
-async def check_for_tags(page: Page, timeout: int = 7500) -> bool:
+async def check_for_tags(page: Page, timeout: int) -> bool:
     try:
         await page.locator("a[href*='/feed'], a[href*='/profile'], a[href*='/calendar']").first.wait_for(state="visible", timeout=timeout)
         return len(await page.locator('a[href*="/tag"]').all()) != 0
     except (PlaywrightError, TimeoutError):
         return False
 
-async def check_for_memories(page: Page, timeout: int = 7500) -> bool:
+async def check_for_memories(page: Page, timeout: int) -> bool:
+
+    memories = page.locator('div.b-lenta-body > article')
+    no_mems = page.get_by_text('No more entries')
+
+    combined_locator = memories.or_(no_mems)
     try:
-        await page.locator('div.b-lenta-body > article').nth(0).wait_for(state="visible", timeout=timeout)
-        return True
-    except (AssertionError, PlaywrightError):
+        await expect(combined_locator.first).to_be_visible(timeout=timeout)
+        return len(await memories.all()) != 0
+    except (PlaywrightError, TimeoutError):
         return False
 
-async def check_for_vgifts(page: Page, timeout: int = 7500) -> bool:
+async def check_for_vgifts(page: Page, timeout: int) -> bool:
     try:
-        await page.get_by_text("a virtual gift").wait_for(state="visible")
+        await page.get_by_text("a virtual gift").wait_for(state="visible", timeout=timeout)
         return len(await page.locator('.b-vgifts').all()) != 0
     except (PlaywrightError, TimeoutError):
         return False
 
-async def check_for_userpics(page: Page, timeout: int = 7500) -> bool:
+async def check_for_userpics(page: Page, timeout: int) -> bool:
+    combined_sel = page.get_by_text("Current Userpics").or_(page.get_by_text("No Pictures"))
+
     try:
-        await page.locator('h1').nth(1).wait_for(state="attached", timeout=timeout)
+        await expect(combined_sel.first).to_be_visible(timeout=timeout)
         return len(await page.get_by_text("No Pictures").all()) == 0
-    except PlaywrightError:
+    except (PlaywrightError, TimeoutError):
         return False
 
-async def check_for_albums(page: Page, timeout: int = 7500) -> bool:
+async def check_for_albums(page: Page, timeout: int) -> bool:
     try:
         await page.locator('h1').nth(0).wait_for(state="attached", timeout=timeout)
         return len(await page.get_by_text("No Albums").all()) == 0
-    except PlaywrightError:
+    except (PlaywrightError, TimeoutError):
         return False
 
 def parse_targets(target_str: str) -> tuple[list[str], list[str]]:
@@ -238,7 +247,7 @@ def parse_targets(target_str: str) -> tuple[list[str], list[str]]:
             for line in lines:
                 process_item(line)
         except Exception as e:
-            console.print(f"[bold red]Failed to read input file {target_str}: {e}[/bold red]")
+            print(f"[bold red]Failed to read input file {target_str}: {e}[/bold red]")
     else:
         process_item(target_str)
 
@@ -263,14 +272,14 @@ def print_summary_table(all_users: list, elapsed_time: float):
 
     def format_icon(status: str) -> str:
         if status == "success":
-            return "[green]✓[/green]"
+            return "[$success]✓[/$success]"
         elif status == "failed":
             return "[red]✗[/red]"
         return "[dim]-[/dim]"
 
     for user in all_users:
         has_failures = "failed" in user.results.values()
-        status = "[red]✗ Failed[/red]" if has_failures else "[green]✓ Success[/green]"
+        status = "[red]✗ Failed[/red]" if has_failures else "[$success]✓ Success[/$success]"
 
         table.add_row(
             status,
@@ -284,19 +293,21 @@ def print_summary_table(all_users: list, elapsed_time: float):
             format_icon(user.results.get("photos", "skipped"))
         )
 
-    console.print("\n")
-    console.print(table)
+    print("\n")
+    print(table)
 
 async def get_account_type(page: Page) -> str:
     try:
         await page.locator('.ljuser').first.wait_for(state="attached")
         account_type = await page.locator('.ljuser').first.get_attribute('class')
-        if "i-ljuser-type-P" in account_type:
+        if account_type and "i-ljuser-type-P" in account_type:
             return "personal"
-        elif "i-ljuser-type-C" in account_type:
+        elif account_type and "i-ljuser-type-C" in account_type:
             return "community"
+        else:
+            raise
     except Exception:
-        console.print("[bold yellow]Could not determine account type.[/bold yellow]")
+        print("[bold $text-warning]Warning![/bold]Could not determine account type.[/$text-warning]")
         return ""
 
 async def get_logged_in(page) -> str:

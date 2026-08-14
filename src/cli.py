@@ -1,21 +1,11 @@
 import argparse
 import asyncio
 import json
-import os
 import sys
-import time
-from pathlib import Path
 
 import configargparse
-from playwright.async_api import async_playwright
-from rich.panel import Panel
 
-from .config import console, DEFAULT_USER_DATA_DIR, DEFAULT_SETTINGS, load_config
-from .browser import run_login_flow, launch_browser_with_fallback
-from .account_scraper import LiveJournalAccount
-from .photo_scraper import LiveJournalPhotoScraper
-from .utils import parse_targets, print_summary_table
-
+from .config import DEFAULT_USER_DATA_DIR, load_config
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -48,6 +38,8 @@ class JSONConfigFileParser(configargparse.ConfigFileParser):
                 result[normalized_key] = str(v)
         return result
 
+    def error(self, message):
+        raise configargparse.ConfigFileParserException(message)
 
 async def main_async():
     parser = configargparse.ArgumentParser(
@@ -62,15 +54,11 @@ async def main_async():
                         help="Path to a JSON config file to load settings from (default: config.json).")
     parser.add_argument("--user-data-dir", default=None,
                         help=f"Directory for browser session data (default: read from config or USER_DATA_DIR env var or '{DEFAULT_USER_DATA_DIR}')")
-    parser.add_argument("--login", type=str2bool, nargs="?", const=True, default=None,
-                        help="Launch browser to log in manually and save session credentials.")
-    parser.add_argument("--headed", type=str2bool, nargs="?", const=True, default=None,
-                        help="Run browser in headed mode with a visible window.")
     parser.add_argument("--headless", action="store_true", default=None, help="Run browser in headless mode.")
-    parser.add_argument("--delay", type=float, default=None,
+    parser.add_argument("--delay", type=float, default=3.0,
                         help="Time in seconds to wait before page actions/downloads.")
-    parser.add_argument("--install-deps", type=str2bool, nargs="?", const=True, default=None,
-                        help="Install missing Linux system dependencies for Playwright.")
+    parser.add_argument("--timeout", type=int, default=30,
+                        help="Timeout in seconds for page actions (default: 30).")
 
     # Selective account scraping flags
     parser.add_argument("--entries", nargs="*", choices=["html", "pdf", "both", "none"], help="Scrape and download entries.")
@@ -89,7 +77,11 @@ async def main_async():
     parser.add_argument("--instant-start", choices=["extras", "posts"],
                         help="Instantly start scraping after tui is loaded")
 
-    args = parser.parse_args()
+    try:
+        args, unknown = parser.parse_known_args()
+    except configargparse.ConfigFileParserException as e:
+        print(f"[bold $text-error]Error parsing arguments: {e}[/bold $text-error]")
+        sys.exit(1)
 
     settings = load_config(args.config)
 
@@ -119,7 +111,7 @@ async def main_async():
         settings["target"] = target
 
     from .tui import LiveJournalScraperApp
-    app = LiveJournalScraperApp(initial_settings=settings)
+    app = LiveJournalScraperApp(initial_settings=settings, unknown_args=unknown)
     await app.run_async()
 
 
@@ -127,12 +119,12 @@ def main():
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:
-        console.print("\n[bold red]Operation cancelled by user.[/bold red]")
+        print("\n[bold #text-error]Operation cancelled by user.[/bold #text-error]")
         sys.exit(0)
     except Exception as e:
         if "AuthenticationError" in type(e).__name__:
-            console.print(f"\n[bold red]❌ Error: Unable to download private photos. {e}[/bold red]")
-            console.print(
-                "[bold red]Please run 'lj-scraper --login' to authenticate first, or check your login session.[/bold red]")
+            print(f"\n[bold #text-error]❌ Error: Unable to download private photos. {e}[/bold #text-error]")
+            print(
+                "[bold #text-error]Please run 'lj-scraper --login' to authenticate first, or check your login session.[/bold #text-error]")
             sys.exit(1)
         raise e

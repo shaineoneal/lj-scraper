@@ -1,19 +1,19 @@
 import asyncio
-import os
 import random
 import re
 import sys
 from pathlib import Path
 
-import configargparse
 from rich.panel import Panel
 from rich.table import Table
 
 from src.browser import launch_browser_with_fallback
-from .config import console, DEFAULT_USER_DATA_DIR
 
-from src.account_scraper import settings
-from src.cli import JSONConfigFileParser
+from .config import (
+    DEFAULT_USER_DATA_DIR,
+    load_config,
+    update_status,
+)
 
 # Add the parent directory of this file to the Python path if running as a script
 if __name__ == "__main__" and not __package__:
@@ -21,8 +21,6 @@ if __name__ == "__main__" and not __package__:
     __package__ = "src"
 
 from openpyxl import load_workbook
-from openpyxl.cell import Cell
-from openpyxl.worksheet.worksheet import Worksheet
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page, async_playwright
 
@@ -197,52 +195,8 @@ body > article > div.b-singlepost-qrcode.ng-isolate-scope{display: none;}
 """
 
 # ==============================================================================
-# IMPORTS & COMPATIBILITY LAYER
-# ==============================================================================
-
-async def resolve_proxy(proxy_str):
-    if not proxy_str or proxy_str.lower() in ("none", "null", ""):
-        return None
-    if proxy_str.lower() == "auto":
-        console.print("[yellow]Warning: 'auto' proxy is not supported, proceeding without proxy.[/yellow]")
-        return None
-    server = proxy_str
-    username = None
-    password = None
-    match = re.match(r"^(https?|socks5)://([^:]+):([^@]+)@(.+)$", proxy_str, re.IGNORECASE)
-    if match:
-        proto, user, pwd, host = match.groups()
-        server = f"{proto}://{host}"
-        username = user
-        password = pwd
-
-    res = {"server": server}
-    if username:
-        res["username"] = username
-    if password:
-        res["password"] = password
-    return res
-
-
-# ==============================================================================
 # DECOUPLED BUSINESS LOGIC FUNCTIONS
 # ==============================================================================
-
-def update_status(text: str) -> None:
-    """Update the current status if the TUI has hooked console.update_status."""
-    updater = getattr(console, "update_status", None)
-    if callable(updater):
-        updater(text)
-    elif text:
-        console.print(f"[dim]{text}[/dim]")
-
-
-def status_context(text: str):
-    status_factory = getattr(console, "status", None)
-    if callable(status_factory):
-        return status_factory(text, spinner="dots")
-    return nullcontext()
-
 
 def extract_urls_from_excel(excel_file_path: Path | str) -> list[str]:
     """
@@ -429,7 +383,7 @@ class LJPost:
         else:
             filename += ".html"
 
-        console.print(f"Saving post to: {output_dir / filename}")
+        print(f"    Saving post to: {output_dir / filename}")
         save_path = Path(output_dir) / f"{filename}"
         with open(save_path, "w", encoding="utf-8") as f:
             f.write(self.html_content)
@@ -453,7 +407,7 @@ async def create_post_html(page: Page) -> str | None:
         post = LJPost(page, url)
         return await post.render_html()
     except Exception as e:
-        console.print(f"Error creating post HTML: {e}")
+        print(f"Error creating post HTML: {e}")
         return None
 
 
@@ -481,36 +435,35 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay
         "total": len(posts)
     }
 
-    with status_context(f"Saving {len(posts)} post(s)") as _status:
-        for idx, post_url in enumerate(posts, start=1):
-            update_status(f"[$success]Saving post(s)...[/$success]")
-            console.print(f"[{idx}/{len(posts)}] Scraping post: {post_url}")
+    update_status("Saving {len(posts)} post(s)")
+    for idx, post_url in enumerate(posts, start=1):
+        update_status("Saving post(s)...")
+        print(f"[{idx}/{len(posts)}] Scraping post: {post_url}")
 
-            try:
-                # Instantiate the LJPost helper
-                post = LJPost(page, post_url)
+        try:
+            # Instantiate the LJPost helper
+            post = LJPost(page, post_url)
 
-                # Load the post page
-                await post.load()
-                if delay > 0:
-                    jitter = delay * random.uniform(0.5, 1.5)
-                    await asyncio.sleep(jitter)
-                if post.page_count <= 1.0:
-                    await post.save_to_file(output_path)
-                else:
-                    for page_num in range(1, int(post.page_count) + 1):
-                        if page_num == 1:
-                            await post.save_to_file(output_path, filename_index=page_num)
-                        else:
-                            await post.load(index=page_num)
-                            print(post.page.url)
-                            await post.save_to_file(output_path, filename_index=page_num)
+            # Load the post page
+            await post.load()
+            if delay > 0:
+                jitter = delay * random.uniform(0.5, 1.5)
+                await asyncio.sleep(jitter)
+            if post.page_count <= 1.0:
+                await post.save_to_file(output_path)
+            else:
+                for page_num in range(1, int(post.page_count) + 1):
+                    if page_num == 1:
+                        await post.save_to_file(output_path, filename_index=page_num)
+                    else:
+                        await post.load(index=page_num)
+                        await post.save_to_file(output_path, filename_index=page_num)
 
-                results["success_count"] += 1
+            results["success_count"] += 1
 
-            except Exception as err:
-                console.print_exception()
-                results["failed_urls"].append(post_url)
+        except Exception as err:
+            print(f"Error processing post {post_url}: {err}")
+            results["failed_urls"].append(post_url)
 
     update_status("")
     return results
@@ -566,9 +519,9 @@ async def main_async(target=None, settings=None):
             posts = extract_urls_from_excel(target)
             dir_name = posts[0].lstrip('https://').split('.')[0] if posts else "saved_posts"
             output_dir = Path("output") / dir_name
-            console.print(f"[bold green]Loaded {len(posts)} posts from Excel file: {target} -> Saving under folder: {output_dir}[/bold green]")
+            print(f"[bold $success]Loaded {len(posts)} posts from Excel file: {target} -> Saving under folder: {output_dir}[/bold $success]")
         except Exception as e:
-            console.print(f"[bold red]Error loading Excel file '{target}': {e}[/bold red]")
+            print(f"[bold red]Error loading Excel file '{target}': {e}[/bold red]")
             sys.exit(1)
     elif target.endswith(".txt"):
         try:
@@ -583,28 +536,27 @@ async def main_async(target=None, settings=None):
                 output_dir = Path("output") / username
             else:
                 output_dir = Path("output") / "saved_posts"
-            console.print(f"[bold green]Loaded {len(posts)} posts from text file: {target} -> Saving under folder: {output_dir}[/bold green]")
+            print(f"[bold $success]Loaded {len(posts)} posts from text file: {target} -> Saving under folder: {output_dir}[/bold $success]")
         except Exception as e:
-            console.print(f"[bold red]Failed to read input file {target}: {e}[/bold red]")
+            print(f"[bold red]Failed to read input file {target}: {e}[/bold red]")
             sys.exit(1)
     elif target.startswith(("http://", "https://")):
         posts = [target]
         username, _ = parse_url_target(target)
         output_dir = Path("output") / username
-        console.print(f"[bold green]Saving single post URL: {target} -> Saving under folder: {output_dir}[/bold green]\n")
+        print(f"[bold $text-success]Saving single post URL: {target} -> Saving under folder: {output_dir}[/bold $text-success]\n")
     else:
-        console.print(f"[bold red]Invalid target '{target}'. Please specify a post URL, a .xlsx file, or a .txt file containing URLs.[/bold red]")
-        sys.exit(1)
+        print(f"[bold $text-error]Invalid target '{target}'. Please specify a post URL, a .xlsx file, or a .txt file containing URLs.[/bold $text-error]")
 
     if not posts:
-        console.print("[bold red]No post URLs found to save.[/bold red]")
+        print("[bold $text-error]No post URLs found to save.[/bold $text-error]")
         return
 
     # Render clean startup dashboard panel
     info_table = Table.grid(padding=(0, 2))
     info_table.add_column(style="cyan bold")
     info_table.add_column()
-    
+
     info_table.add_row("Target", target)
     info_table.add_row("Number of Posts", str(len(posts)))
     info_table.add_row("Proxy", f"[green]{resolved_proxy['server']}[/green]" if (resolved_proxy and 'server' in resolved_proxy) else "[dim]Direct (None)[/dim]")
@@ -620,7 +572,7 @@ async def main_async(target=None, settings=None):
         expand=False
     ))
 
-    console.print("[bold blue]Launching browser context...[/bold blue]")
+    update_status("Launching browser context...")
     async with async_playwright() as p:
         timeout = settings.get("timeout", 30)
 
@@ -636,7 +588,7 @@ async def main_async(target=None, settings=None):
             page.set_default_timeout(int(timeout * 1000))
             page.set_default_navigation_timeout(int(timeout * 1000))
             results = await save_posts(page, posts, output_dir, delay=settings.get("delay", 0.0))
-            console.print(f"\n[bold green]Completed! Saved {results['success_count']} posts. Failed: {len(results['failed_urls'])}[/bold green]")
+            print(f"\n[bold $success]Completed! Saved {results['success_count']} posts. Failed: {len(results['failed_urls'])}[/bold $success]")
         finally:
             await context.close()
 
@@ -645,12 +597,12 @@ def main_cli():
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:
-        console.print("\n[bold red]Operation cancelled by user.[/bold red]")
+        print("\n[bold red]Operation cancelled by user.[/bold red]")
         sys.exit(1)
     except Exception as e:
         if "AuthenticationError" in type(e).__name__:
-            console.print(f"\n[bold red]❌ Error: Unable to download private photos/posts. {e}[/bold red]")
-            console.print("[bold red]Please run 'lj-scraper --login' to authenticate first, or check your login session.[/bold red]")
+            print(f"\n[bold red]❌ Error: Unable to download private photos/posts. {e}[/bold red]")
+            print("[bold red]Please run 'lj-scraper --login' to authenticate first, or check your login session.[/bold red]")
             sys.exit(1)
         raise e
 

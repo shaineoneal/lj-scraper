@@ -1,21 +1,27 @@
-import os
-import re
 import json
+import re
 from pathlib import Path
+
 from rich.console import Console
 
 console = Console()
 
+def update_status(text: str) -> None:
+    """Update the current status if the TUI has hooked console.update_status."""
+    updater = getattr(console, "update_status", None)
+    if callable(updater):
+        updater(text)
+    elif text:
+        console.print(f"[dim]{text}[/dim]")
+
 CONFIG_FILE = Path("config.json")
 
 DEFAULT_SETTINGS = {
-    "target": "",
     "user_data_dir": "user_profile",
     "max_memories": 750,
     "max_dl_memories": 500,
-    "login": False,
-    "headed": False,
-    "delay": None,
+    "delay": 3.0,
+    "timeout": 30,
     "entries": "both",
     "profile": "both",
     "tags": "both",
@@ -25,18 +31,17 @@ DEFAULT_SETTINGS = {
     "photos": "both"
 }
 
-def load_config(path: Path = CONFIG_FILE) -> dict[str, str | bool]:
+def load_config(path: Path = CONFIG_FILE) -> dict:
     """Loads configuration from config file.
     If the file doesn't exist, it creates a default template.
     """
-    import copy
     path = Path(path) if path else CONFIG_FILE
     if not path.exists():
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(DEFAULT_SETTINGS, f, indent=4)
         except Exception as e:
-            console.print(f"[bold yellow]Warning: Could not create default config file: {e}[/bold yellow]")
+            print(f"[bold $text-warning]Warning: Could not create default config file: {e}[/bold $text-warning]")
         return {**DEFAULT_SETTINGS}
 
     try:
@@ -46,7 +51,7 @@ def load_config(path: Path = CONFIG_FILE) -> dict[str, str | bool]:
             merged = {**DEFAULT_SETTINGS, **user_config}
             return merged
     except Exception as e:
-        console.print(f"[bold red]Warning: Failed to parse {path}, using defaults: {e}[/bold red]")
+        print(f"[bold $text-error]Warning: Failed to parse {path}, using defaults: {e}[/bold $text-error]")
         return {**DEFAULT_SETTINGS}
 
 USER_DATA_ENV = "USER_DATA_DIR"
@@ -76,4 +81,3 @@ SEL_COUNT = 'div[class^="Details-"]'
 SEL_DESC = 'p[class^="Description-"]'
 SEL_CONTAINER = 'a[class^="Container-"]'
 SEL_PHOTO_DESC = 'p[class^="Description-"]'
-
