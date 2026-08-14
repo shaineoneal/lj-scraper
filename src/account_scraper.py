@@ -122,7 +122,7 @@ class LiveJournalAccount:
             result["success"] = True
         except Exception as e:
             if task_name != "photos" and self.account_type != "community":
-                print(f"    [bold $text-error]✗[/bold $text-error] [dim]Failed:[/dim] {url} - {str(e)}")
+                print(f"    [bold $error]✗[/bold $error] [dim]Failed:[/dim] {url} - {str(e)}")
                 result["error"] = True
         finally:
             if page:
@@ -136,14 +136,14 @@ class LiveJournalAccount:
         # Determine what to save for this task
         task_option = self.format_options.get(task_name)
         if task_option is False or task_option is None:
-            print(f"    [bold $text-warning]⚠[/bold $text-warning] [dim]Skipping saving assets for {task_name} (disabled).[/dim]")
+            print(f"    [bold $warning]⚠[/bold $warning] [dim]Skipping saving assets for {task_name} (disabled).[/dim]")
             return
 
         save_html = task_option in ("html", "both")
         save_pdf = task_option in ("pdf", "both")
 
         if not save_html and not save_pdf:
-            print(f"    [bold $text-warning]⚠[/bold $text-warning] [dim]Skipping saving assets for {task_name} (no formats enabled).[/dim]")
+            print(f"    [bold $warning]⚠[/bold $warning] [dim]Skipping saving assets for {task_name} (no formats enabled).[/dim]")
             return
 
         try:
@@ -162,9 +162,9 @@ class LiveJournalAccount:
             print(f"    [bold red]✗[/bold red] [dim]Error saving assets for {task_name}:[/dim] {e}")
 
         if task_name == "memory_index":
-            print(f"        [bold green]✓[/bold green] [dim]Saved assets for:[/dim] {task_name} (Memory Index only, not full memories)")
+            print(f"        [bold $success]✓[/bold $success] [dim]Saved assets for:[/dim] {task_name} (Memory Index only, not full memories)")
         if task_name != "photos" and task_name != "memory_index":
-            print(f"    [bold green]✓[/bold green] [dim]Saved assets for:[/dim] {task_name}")
+            print(f"    [bold $success]✓[/bold $success] [dim]Saved assets for:[/dim] {task_name}")
 
     async def scrape_entries(self) -> dict:
         async def save(page, res):
@@ -220,12 +220,11 @@ class LiveJournalAccount:
             await self._save_page_assets(page, "memories", filename, res)
 
         if self.mem_count > settings.get('max_memories', 750):
-            print(
-                f"    [bold yellow]⚠[/bold yellow] [dim]Memory count ({self.mem_count}) exceeds max_memories, collecting the index and the first {settings.get('max_dl_memories')} memories...")
             self.mem_count = settings.get('max_dl_memories', 500)
         elif not self.mem_count:
             print(
                 f"    [bold yellow]⚠[/bold yellow] [dim]Unknown memory count, a maximum of {settings.get('max_dl_memories', 750)} memories will be collected...")
+            print(f"    [bold $warning]⚠[/bold $warning] [dim]No memories found for {self.username}, skipping.[/dim]")
 
         return await self._scrape_task("memories", "memories", check_fn=check, save_fn=save)
 
@@ -265,7 +264,7 @@ class LiveJournalAccount:
                     album_urls.append(href)
 
             if not album_urls:
-                print(f"    [bold yellow]⚠[/bold yellow] [dim]No photo albums found for {self.username}.[/dim]")
+                print(f"    [bold $warning]⚠[/bold $warning] [dim]No photo albums found for {self.username}.[/dim]")
                 return
 
             photo_scraper = LiveJournalPhotoScraper(self.context, headless=True)
@@ -290,7 +289,7 @@ class LiveJournalAccount:
 
             res["success_count"] = success_count
             res["total_albums"] = len(album_urls)
-            print(f"    [bold green]✓[/bold green] [dim]Downloaded {success_count}/{len(album_urls)} albums.[/dim]")
+            print(f"    [bold $success]✓[/bold $success] [dim]Downloaded {success_count}/{len(album_urls)} albums.[/dim]")
 
         return await self._scrape_task("photos", "photos", check_fn=check, save_fn=save)
 
@@ -303,9 +302,9 @@ class LiveJournalAccount:
                 LiveJournalAccount.has_checked_login = True
                 LiveJournalAccount.logged_in_user = await get_logged_in(page)
                 if LiveJournalAccount.logged_in_user:
-                    print(f"    [bold green]✓[/bold green] [dim]Logged in as {LiveJournalAccount.logged_in_user}[/dim]")
+                    print(f"    [bold $success]✓[/bold $success] [dim]Logged in as {LiveJournalAccount.logged_in_user}[/dim]")
                 else:
-                    print("    [bold yellow]⚠[/bold yellow] [dim]Not logged in! Some content may be restricted.[/dim]")
+                    print("    [bold $warning]⚠[/bold $warning] [dim]Not logged in! Some content may be restricted.[/dim]")
             
             account_type = await get_account_type(page)
             if account_type is not None:
@@ -317,7 +316,7 @@ class LiveJournalAccount:
                     print(f"\n[bold $text-accent]👥  Processing community account:[/bold $text-accent] {self.username}")
 
         except Exception as e:
-            print(f"    [bold yellow]⚠[/bold yellow] [dim]Failed to extract initial user info:[/dim] {e}")
+            print(f"    [bold $warning]⚠[/bold $warning] [dim]Failed to extract initial user info:[/dim] {e}")
 
     async def process(self):
         """Executes all selected scraping tasks for the account."""

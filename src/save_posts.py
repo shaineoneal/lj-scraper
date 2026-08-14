@@ -437,7 +437,7 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay
 
     update_status("Saving {len(posts)} post(s)")
     for idx, post_url in enumerate(posts, start=1):
-        update_status("[green]Saving post(s)...[/green]")
+        update_status("Saving post(s)...")
         print(f"[{idx}/{len(posts)}] Scraping post: {post_url}")
 
         try:
@@ -519,7 +519,7 @@ async def main_async(target=None, settings=None):
             posts = extract_urls_from_excel(target)
             dir_name = posts[0].lstrip('https://').split('.')[0] if posts else "saved_posts"
             output_dir = Path("output") / dir_name
-            print(f"[bold green]Loaded {len(posts)} posts from Excel file: {target} -> Saving under folder: {output_dir}[/bold green]")
+            print(f"[bold $success]Loaded {len(posts)} posts from Excel file: {target} -> Saving under folder: {output_dir}[/bold $success]")
         except Exception as e:
             print(f"[bold red]Error loading Excel file '{target}': {e}[/bold red]")
             sys.exit(1)
@@ -536,7 +536,7 @@ async def main_async(target=None, settings=None):
                 output_dir = Path("output") / username
             else:
                 output_dir = Path("output") / "saved_posts"
-            print(f"[bold green]Loaded {len(posts)} posts from text file: {target} -> Saving under folder: {output_dir}[/bold green]")
+            print(f"[bold $success]Loaded {len(posts)} posts from text file: {target} -> Saving under folder: {output_dir}[/bold $success]")
         except Exception as e:
             print(f"[bold red]Failed to read input file {target}: {e}[/bold red]")
             sys.exit(1)
@@ -544,19 +544,19 @@ async def main_async(target=None, settings=None):
         posts = [target]
         username, _ = parse_url_target(target)
         output_dir = Path("output") / username
-        print(f"[bold green]Saving single post URL: {target} -> Saving under folder: {output_dir}[/bold green]\n")
+        print(f"[bold $text-success]Saving single post URL: {target} -> Saving under folder: {output_dir}[/bold $text-success]\n")
     else:
-        print(f"[bold red]Invalid target '{target}'. Please specify a post URL, a .xlsx file, or a .txt file containing URLs.[/bold red]")
+        print(f"[bold $text-error]Invalid target '{target}'. Please specify a post URL, a .xlsx file, or a .txt file containing URLs.[/bold $text-error]")
 
     if not posts:
-        print("[bold red]No post URLs found to save.[/bold red]")
+        print("[bold $text-error]No post URLs found to save.[/bold $text-error]")
         return
 
     # Render clean startup dashboard panel
     info_table = Table.grid(padding=(0, 2))
     info_table.add_column(style="cyan bold")
     info_table.add_column()
-    
+
     info_table.add_row("Target", target)
     info_table.add_row("Number of Posts", str(len(posts)))
     info_table.add_row("Proxy", f"[green]{resolved_proxy['server']}[/green]" if (resolved_proxy and 'server' in resolved_proxy) else "[dim]Direct (None)[/dim]")
@@ -572,7 +572,7 @@ async def main_async(target=None, settings=None):
         expand=False
     ))
 
-    print("[bold blue]Launching browser context...[/bold blue]")
+    update_status("Launching browser context...")
     async with async_playwright() as p:
         timeout = settings.get("timeout", 30)
 
@@ -588,7 +588,7 @@ async def main_async(target=None, settings=None):
             page.set_default_timeout(int(timeout * 1000))
             page.set_default_navigation_timeout(int(timeout * 1000))
             results = await save_posts(page, posts, output_dir, delay=settings.get("delay", 0.0))
-            print(f"\n[bold green]Completed! Saved {results['success_count']} posts. Failed: {len(results['failed_urls'])}[/bold green]")
+            print(f"\n[bold $success]Completed! Saved {results['success_count']} posts. Failed: {len(results['failed_urls'])}[/bold $success]")
         finally:
             await context.close()
 

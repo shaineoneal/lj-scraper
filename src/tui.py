@@ -519,7 +519,7 @@ class LiveJournalScraperApp(App):
     def populate_results_table(self, all_users, elapsed_time):
         table = self.query_one("#results-table", DataTable)
         table.clear()
-        
+
         def format_icon(status: str) -> Text:
             if status == "success":
                 return Text("✓", style="$text-success")

@@ -88,13 +88,13 @@ async def download_pdf(page: Page, save_path: str) -> bool:
         return True
     except PlaywrightError as e:
         if "headless" in str(e).lower():
-            print(f"    [bold $text-warning]⚠[/bold $text-warning] [dim]Skipping PDF for {Path(save_path).name} (PDF generation requires headless mode).[/dim]")
+            print(f"    [bold $warning]⚠[/bold $warning] [dim]Skipping PDF for {Path(save_path).name} (PDF generation requires headless mode).[/dim]")
             return False
         else:
-            print(f"    [bold $text-error]Failed to download PDF for {save_path}: {e}[/bold $text-error]")
+            print(f"    [bold $error]Failed to download PDF for {save_path}: {e}[/bold $error]")
             raise e
     except Exception as e:
-        print(f"    [bold $text-error]Failed to download PDF for {save_path}: {e}[/bold $text-error]")
+        print(f"    [bold $error]Failed to download PDF for {save_path}: {e}[/bold $error]")
         raise e
 
 async def download_html(page: Page, save_path: str):
@@ -259,14 +259,14 @@ def print_summary_table(all_users: list, elapsed_time: float):
 
     def format_icon(status: str) -> str:
         if status == "success":
-            return "[green]✓[/green]"
+            return "[$success]✓[/$success]"
         elif status == "failed":
             return "[red]✗[/red]"
         return "[dim]-[/dim]"
 
     for user in all_users:
         has_failures = "failed" in user.results.values()
-        status = "[red]✗ Failed[/red]" if has_failures else "[green]✓ Success[/green]"
+        status = "[red]✗ Failed[/red]" if has_failures else "[$success]✓ Success[/$success]"
 
         table.add_row(
             status,

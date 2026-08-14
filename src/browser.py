@@ -44,7 +44,7 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
 
         # 3. Try system Chromium
         try:
-            update_status("[blue]Attempting to launch system-installed Chromium...[/blue]")
+            update_status("Attempting to launch system-installed Chromium...")
             context = await p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
                 headless=headless,
@@ -80,7 +80,7 @@ async def run_login_flow(user_data_dir: str):
     async with async_playwright() as p:
         print(Panel.fit(
             "A browser window has opened. Please log in to your LiveJournal account and then close the browser to save your session data for future scraping runs.\n\n"
-            f"[dim]Session data will be saved to:[/dim] [bold green]{Path(user_data_dir).resolve()}[/bold green]\n"
+            f"[dim]Session data will be saved to:[/dim] [bold $success]{Path(user_data_dir).resolve()}[/bold $success]\n"
             f"[dim]If you want to use a different directory for session data, set the USER_DATA_DIR environment variable or use the --user-data-dir flag when running the script.[/dim]",
             title="[bold blue]Login Flow[/bold blue]\n\n",
             border_style="blue"
@@ -106,4 +106,4 @@ async def run_login_flow(user_data_dir: str):
 
         # Wait until closed
         await closed_event.wait()
-        print("[bold green]Browser closed. Session data saved successfully![/bold green]")
+        print("[bold $success]Browser closed. Session data saved successfully![/bold $success]")
