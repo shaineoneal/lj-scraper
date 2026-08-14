@@ -37,7 +37,7 @@ class LiveJournalAccount:
         self.timeout = settings.get("timeout", 30) if not self.is_retrying else settings.get("timeout", 30) * 2.25
         self.timeout_ms = int(self.timeout * 1000)
         self.status = None
-        self.mem_count = 0
+        self.mem_count = None
 
 
         clean_username = username.replace("_", "-")
@@ -208,23 +208,30 @@ class LiveJournalAccount:
         return await self._scrape_task("vgifts", "virtual gifts", check_fn=check_for_vgifts, save_fn=save)
 
     async def scrape_memories(self) -> dict:
-        async def check(page, mem_count) -> bool:
-            if mem_count is None or mem_count == 0:
-                return await check_for_memories(page, timeout=(self.timeout*1000))
+        async def check(page, res) -> bool:
+            if self.mem_count is None:
+                mems = await check_for_memories(page, timeout=(self.timeout * 1000))
+                if mems:
+                    print(
+                        f"    [bold $warning]⚠[/bold $warning] [dim]Unknown memory count, a maximum of {settings.get('max_dl_memories', 750)} memories will be collected..."
+                    )
+                    return True
+                else:
+                    print(
+                        f"    [bold $warning]⚠[/bold $warning] [dim]No memories found for {self.username}, skipping.[/dim]"
+                    )
+                    return False
             return True
 
         async def save(page, res):
             filename = f"{self.username} - Memories"
-            await scroll_with_keyboard(page, self.mem_count if self.mem_count else settings.get('max_dl_memories', 500))
+            await scroll_with_keyboard(page, self.mem_count if self.mem_count else settings.get('max_dl_memories', 500), settings.get('max_dl_memories', 500))
             await page.wait_for_timeout(5000)
             await self._save_page_assets(page, "memories", filename, res)
 
-        if self.mem_count > settings.get('max_memories', 750):
-            self.mem_count = settings.get('max_dl_memories', 500)
-        elif not self.mem_count:
-            print(
-                f"    [bold yellow]⚠[/bold yellow] [dim]Unknown memory count, a maximum of {settings.get('max_dl_memories', 750)} memories will be collected...")
+        if self.mem_count == 0:
             print(f"    [bold $warning]⚠[/bold $warning] [dim]No memories found for {self.username}, skipping.[/dim]")
+            return {"success": False, "error": False}
 
         return await self._scrape_task("memories", "memories", check_fn=check, save_fn=save)
 
@@ -267,7 +274,7 @@ class LiveJournalAccount:
                 print(f"    [bold $warning]⚠[/bold $warning] [dim]No photo albums found for {self.username}.[/dim]")
                 return
 
-            photo_scraper = LiveJournalPhotoScraper(self.context, headless=True)
+            photo_scraper = LiveJournalPhotoScraper(self.context, self.settings)
 
             success_count = 0
             for idx, album_url in enumerate(album_urls):

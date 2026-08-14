@@ -101,7 +101,12 @@ async def download_html(page: Page, save_path: str):
     """Downloads the current page HTML content."""
     Path(save_path).write_text(await page.content(), encoding="utf-8")
 
-async def scroll_with_keyboard(page: Page, mem_count: int):
+async def scroll_with_keyboard(page: Page, mem_count: int, max_memories: int):
+    if mem_count > max_memories:
+        print(
+            f"    [bold $warning]⚠[/bold $warning] [dim]Memory count ({mem_count}) exceeds max_memories, collecting the index and the first {max_memories} memories..."
+        )
+
     """Scrolls down using the lazyloader/footer or keyboard to load all dynamic content/entries."""
     no_more_entries = page.locator(".b-lenta-emptiness")
 
