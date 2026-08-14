@@ -318,10 +318,10 @@ class LiveJournalAccount:
             if account_type is not None:
                 if account_type == "personal":
                     self.account_type = "personal"
-                    print(f"\n[bold $text-accent]👤  Processing personal account:[/bold $text-accent] {self.username}")
+                    print(f"\n[bold $text-accent]👤  [{self.settings.get('index')}/{self.settings.get('total')}] Processing personal account:[/bold $text-accent] {self.username}")
                 elif account_type == "community":
                     self.account_type = "community"
-                    print(f"\n[bold $text-accent]👥  Processing community account:[/bold $text-accent] {self.username}")
+                    print(f"\n[bold $text-accent]👥  [{self.settings.get('index')}/{self.settings.get('total')}] Processing community account:[/bold $text-accent] {self.username}")
 
         except Exception as e:
             print(f"    [bold $warning]⚠[/bold $warning] [dim]Failed to extract initial user info:[/dim] {e}")
