@@ -21,7 +21,7 @@ class AuthenticationError(Exception):
     pass
 
 class LiveJournalPhotoScraper:
-    def __init__(self, context, headless: bool = True, image_timeout_ms: int = 15000,):
+    def __init__(self, context, settings):
         self.context = context
         self.settings = settings
         self.max_retries = 3
@@ -69,7 +69,7 @@ class LiveJournalPhotoScraper:
                     stats = await self._download_images(page, url, metadata, output_dir)
 
                     if stats:
-                        self._print_album_summary(url, stats)
+                        #self._print_album_summary(url, stats)
                         return True
                     return False
                 except (TimeoutError, Exception) as e:
