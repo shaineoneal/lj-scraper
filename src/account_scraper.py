@@ -29,7 +29,7 @@ class LiveJournalAccount:
         self.username = username
         self.account_type = None
         self.settings = settings
-        self.format_options = settings.get("options")
+        self.format_options = settings.get("format_options")
         import random
         self.jitter = random.uniform(0.5, 1.5) * settings.get("delay", 3.0) # in seconds
         self.user_dir = Path(f"output/{username}")

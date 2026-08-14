@@ -413,7 +413,7 @@ class LiveJournalScraperApp(App):
             "max_memories": parse_num("#max-memories", 750, int),
             "max_dl_memories": parse_num("#max-dl-memories", 500, int),
             "headless": self.query_one("#extras-headless-switch", Switch).value,
-            **format_options
+            "format_options": format_options
         }
 
         profile_targets, album_targets = parse_targets(target)
