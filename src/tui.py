@@ -263,6 +263,12 @@ class LiveJournalScraperApp(App):
         table = self.query_one("#results-table", DataTable)
         table.add_columns("Status", "Account", "Entries", "Profile", "Tags", "Userpics", "Virtual Gifts", "Memories", "Photos")
 
+        if s.get("instant_start") == "extras":
+            self.query_one("#btn-extras", Button).press()
+        if s.get("instant_start") == "posts":
+            self.query_one("#sidebar", TabbedContent).active = "tab-posts"
+            self.call_after_refresh(lambda: self.query_one("#btn-posts", Button).press())
+
     def on_ready(self) -> None:
         # on_ready() runs after the app is fully initialized and ready to accept user input.
         if self.unknown_args:
