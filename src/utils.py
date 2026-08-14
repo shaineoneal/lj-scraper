@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 import pymupdf
-from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import Error as PlaywrightError, expect
 from playwright.async_api import Page
 from rich.table import Table
 
@@ -79,6 +79,7 @@ async def download_pdf(page: Page, save_path: str) -> bool:
         }''')
         if os.path.exists(save_path):
             os.remove(save_path)
+        # noinspection PyTypeChecker
         await page.pdf(
             path=save_path,
             print_background=True,
@@ -175,39 +176,46 @@ async def scroll_with_keyboard(page: Page, mem_count: int, max_memories: int):
             loaded_str = f"{current_count}/{target_str}" if mem_count else str(current_count)
             update_status(f"Scrolling... [dim]Loaded [/dim][$text-secondary]{loaded_str}[/$text-secondary] [dim]entries[/dim]")
 
-async def check_for_tags(page: Page, timeout: int = 7500) -> bool:
+async def check_for_tags(page: Page, timeout: int) -> bool:
     try:
         await page.locator("a[href*='/feed'], a[href*='/profile'], a[href*='/calendar']").first.wait_for(state="visible", timeout=timeout)
         return len(await page.locator('a[href*="/tag"]').all()) != 0
     except (PlaywrightError, TimeoutError):
         return False
 
-async def check_for_memories(page: Page, timeout: int = 7500) -> bool:
+async def check_for_memories(page: Page, timeout: int) -> bool:
+
+    memories = page.locator('div.b-lenta-body > article')
+    no_mems = page.get_by_text('No more entries')
+
+    combined_locator = memories.or_(no_mems)
     try:
-        await page.locator('div.b-lenta-body > article').nth(0).wait_for(state="visible", timeout=timeout)
-        return True
-    except (AssertionError, PlaywrightError):
+        await expect(combined_locator.first).to_be_visible(timeout=timeout)
+        return len(await memories.all()) != 0
+    except (PlaywrightError, TimeoutError):
         return False
 
-async def check_for_vgifts(page: Page, timeout: int = 7500) -> bool:
+async def check_for_vgifts(page: Page, timeout: int) -> bool:
     try:
         await page.get_by_text("a virtual gift").wait_for(state="visible", timeout=timeout)
         return len(await page.locator('.b-vgifts').all()) != 0
     except (PlaywrightError, TimeoutError):
         return False
 
-async def check_for_userpics(page: Page, timeout: int = 7500) -> bool:
+async def check_for_userpics(page: Page, timeout: int) -> bool:
+    combined_sel = page.get_by_text("Current Userpics").or_(page.get_by_text("No Pictures"))
+
     try:
-        await page.locator('h1').nth(1).wait_for(state="attached", timeout=timeout)
+        await expect(combined_sel.first).to_be_visible(timeout=timeout)
         return len(await page.get_by_text("No Pictures").all()) == 0
-    except PlaywrightError:
+    except (PlaywrightError, TimeoutError):
         return False
 
-async def check_for_albums(page: Page, timeout: int = 7500) -> bool:
+async def check_for_albums(page: Page, timeout: int) -> bool:
     try:
         await page.locator('h1').nth(0).wait_for(state="attached", timeout=timeout)
         return len(await page.get_by_text("No Albums").all()) == 0
-    except PlaywrightError:
+    except (PlaywrightError, TimeoutError):
         return False
 
 def parse_targets(target_str: str) -> tuple[list[str], list[str]]:
@@ -292,10 +300,12 @@ async def get_account_type(page: Page) -> str:
     try:
         await page.locator('.ljuser').first.wait_for(state="attached")
         account_type = await page.locator('.ljuser').first.get_attribute('class')
-        if "i-ljuser-type-P" in account_type:
+        if account_type and "i-ljuser-type-P" in account_type:
             return "personal"
-        elif "i-ljuser-type-C" in account_type:
+        elif account_type and "i-ljuser-type-C" in account_type:
             return "community"
+        else:
+            raise
     except Exception:
         print("[bold $text-warning]Warning![/bold]Could not determine account type.[/$text-warning]")
         return ""
