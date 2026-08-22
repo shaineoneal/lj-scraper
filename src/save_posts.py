@@ -505,20 +505,18 @@ def parse_url_target(url: str) -> tuple[str, str]:
     return "single_posts", filename
 
 
-async def main_async(target=None, settings=None):
+async def main_async(target, settings):
 
     update_status("Initializing...")
-
-    if settings is None:
-        settings = load_config()
 
     posts = []
 
     if target.endswith(".xlsx"):
         try:
             posts = extract_urls_from_excel(target)
-            dir_name = posts[0].lstrip('https://').split('.')[0] if posts else "saved_posts"
-            output_dir = Path("output") / dir_name
+            username = posts[0].lstrip('https://').split('.')[0] if posts else "saved_posts"
+            dir_name = re.sub('-', '_', username)
+            output_dir = Path("save_posts_output") / dir_name
             print(f"[bold $success]Loaded {len(posts)} posts from Excel file: {target} -> Saving under folder: {output_dir}[/bold $success]")
         except Exception as e:
             print(f"[bold red]Error loading Excel file '{target}': {e}[/bold red]")
@@ -551,26 +549,6 @@ async def main_async(target=None, settings=None):
     if not posts:
         print("[bold $text-error]No post URLs found to save.[/bold $text-error]")
         return
-
-    # Render clean startup dashboard panel
-    info_table = Table.grid(padding=(0, 2))
-    info_table.add_column(style="cyan bold")
-    info_table.add_column()
-
-    info_table.add_row("Target", target)
-    info_table.add_row("Number of Posts", str(len(posts)))
-    info_table.add_row("Proxy", f"[green]{resolved_proxy['server']}[/green]" if (resolved_proxy and 'server' in resolved_proxy) else "[dim]Direct (None)[/dim]")
-    info_table.add_row("Session Directory", str(Path(user_data_dir).resolve()))
-    info_table.add_row("Mode", "[magenta]Headless[/magenta]" if headless else "[yellow]Headed (Visible Window)[/yellow]")
-    info_table.add_row("Delay Time", f"{delay}s")
-    info_table.add_row("Page Timeout", f"{timeout}s")
-    
-    console.print(Panel(
-        info_table,
-        title="[bold blue]LiveJournal Save Posts[/bold blue]",
-        border_style="blue",
-        expand=False
-    ))
 
     update_status("Launching browser context...")
     async with async_playwright() as p:
