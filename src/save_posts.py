@@ -242,17 +242,17 @@ class LJPost:
             except Exception:
                 break  # Exit if unable to click
 
-    async def load(self, index=1) -> None:
+    async def load(self, delay = 5.0, index=1) -> None:
         """Navigates to the post URL."""
-
+        update_status(f"Loading post: {self.url} (Page {index})")
         if index == 1:
-            await self.page.goto(f"{self.url}?s2id=46580551", wait_until="commit")
-            await self.page.wait_for_timeout(5000)
+            await self.page.goto(f"{self.url}?s2id=46580551", wait_until="networkidle")
+            await self.page.wait_for_timeout(delay)
 
             self.page_count = await self.page.locator("li.b-pager-page").count()/2.0 or 1
         else:
             await self.page.goto(f"{self.url}?s2id=46580551&page={index}", wait_until="networkidle")
-            await self.page.wait_for_timeout(5000)
+            await self.page.wait_for_timeout(delay)
 
         body_el = self.page.locator("body")
         body = await body_el.inner_html()
@@ -261,7 +261,7 @@ class LJPost:
             raise ValueError(f"Post not available: {self.url}")
 
         await self._expand_comments()
-        await self.page.wait_for_timeout(5000)
+        await self.page.wait_for_timeout(delay)
 
     async def _extract_title(self) -> str:
         """Extracts the post title, defaulting to 'No Subject' if not found."""
@@ -364,11 +364,14 @@ class LJPost:
 
         comment_count = await self._extract_comment_count()
         post = f"{await self._extract_post_content()} \n<br> <h3>{comment_count} Comment(s)</h3>"
-
-        self.html_content = (await self._create_header() + await self._extract_about() + post
-                             + await self._extract_comments()
-                             + (await self._extract_pagination() if int(comment_count) > 25 else "")
-                             + await self._extract_footer())
+        self.html_content = await self._create_header() + await self._extract_about() + post
+        if self.page_count < 5:
+            for p in range(1, int(self.page_count) + 1):
+                await self.load(index=p)
+                self.html_content += await self._extract_comments()
+        else:
+            self.html_content += await self._extract_comments() + await self._extract_pagination()
+        self.html_content += await self._extract_footer()
         return self.html_content
 
     async def save_to_file(self, output_dir: Path, filename_index= None) -> Path:
@@ -446,20 +449,15 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay
             post = LJPost(page, post_url)
 
             # Load the post page
-            await post.load()
-            if delay > 0:
-                jitter = delay * random.uniform(0.5, 1.5)
-                await asyncio.sleep(jitter)
-            if post.page_count <= 1.0:
+
+            jitter = delay * random.uniform(0.5, 1.5)
+            await post.load(delay=jitter)
+            if post.page_count < 5:
                 await post.save_to_file(output_path)
             else:
                 for page_num in range(1, int(post.page_count) + 1):
-                    if page_num == 1:
-                        await post.save_to_file(output_path, filename_index=page_num)
-                    else:
-                        await post.load(index=page_num)
-                        await post.save_to_file(output_path, filename_index=page_num)
-
+                    await post.load(delay=jitter, index=page_num)
+                    await post.save_to_file(output_path, filename_index=page_num)
             results["success_count"] += 1
 
         except Exception as err:
