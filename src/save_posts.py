@@ -511,6 +511,8 @@ async def main_async(target, settings):
 
     posts = []
 
+    output_dir = Path("save_posts_output")
+
     if target.endswith(".xlsx"):
         try:
             posts = extract_urls_from_excel(target)
@@ -531,9 +533,9 @@ async def main_async(target, settings):
             # Find common subdomain/username to name output directory
             if posts:
                 username, _ = parse_url_target(posts[0])
-                output_dir = Path("output") / username
+                output_dir = Path("save_posts_output") / username
             else:
-                output_dir = Path("output") / "saved_posts"
+                output_dir = Path("save_posts_output") / "saved_posts"
             print(f"[bold $success]Loaded {len(posts)} posts from text file: {target} -> Saving under folder: {output_dir}[/bold $success]")
         except Exception as e:
             print(f"[bold red]Failed to read input file {target}: {e}[/bold red]")
@@ -541,7 +543,7 @@ async def main_async(target, settings):
     elif target.startswith(("http://", "https://")):
         posts = [target]
         username, _ = parse_url_target(target)
-        output_dir = Path("output") / username
+        output_dir = Path("save_posts_output") / username
         print(f"[bold $text-success]Saving single post URL: {target} -> Saving under folder: {output_dir}[/bold $text-success]\n")
     else:
         print(f"[bold $text-error]Invalid target '{target}'. Please specify a post URL, a .xlsx file, or a .txt file containing URLs.[/bold $text-error]")

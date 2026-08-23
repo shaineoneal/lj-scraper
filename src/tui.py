@@ -54,7 +54,6 @@ class LiveJournalScraperApp(App):
     CSS_PATH = "tui.tcss"
     FORMAT_TASKS = ["entries", "profile", "tags", "userpics", "vgifts", "memories", "photos"]
 
-    shared_user_data_dir = reactive("user_profile")
     shared_delay = reactive("0.0")
     shared_max_memories = reactive("750")
     shared_max_dl_memories = reactive("500")
@@ -144,7 +143,7 @@ class LiveJournalScraperApp(App):
                                 with Horizontal(id="extras-user-data-dir-container"):
                                     yield Label("User Data Directory", id="extras-user-data-dir-label")
                                     yield Rule(line_style="ascii")
-                                    yield Input(id="extras-user-data-dir", compact=True, value=self.shared_user_data_dir)
+                                    yield Input(id="extras-user-data-dir", compact=True)
                                 with Horizontal(id="extras-delay-max-container"):
                                     yield Label("Delay Between Requests (seconds)", id="extras-delay-max-label")
                                     yield Rule(line_style="ascii")
@@ -154,8 +153,7 @@ class LiveJournalScraperApp(App):
                                     yield Label("Request Timeout (seconds)", id="extras-timeout-label")
                                     yield Rule(line_style="ascii")
                                     yield Input(classes="number", compact=True, type="number", id="timeout",
-                                                value=self.shared_timeout)
-
+                                                value=str(self.shared_timeout))
 
                 with TabPane("Posts", id="tab-posts"):
                     with VerticalScroll():
@@ -172,7 +170,7 @@ class LiveJournalScraperApp(App):
                                 with Horizontal(id="posts-user-data-dir-container"):
                                     yield Label("User Data Directory", id="posts-user-data-dir-label")
                                     yield Rule(line_style="ascii")
-                                    yield Input(id="posts-user-data-dir", compact=True, value=self.shared_user_data_dir)
+                                    yield Input(id="posts-user-data-dir", compact=True)
                                 with Horizontal(id="posts-delay-max-container"):
                                     yield Label("Delay Between Requests (seconds)", id="posts-delay-max-label")
                                     yield Rule(line_style="ascii")
@@ -227,9 +225,11 @@ class LiveJournalScraperApp(App):
         self.query_one("#btn-posts", Button).styles.display = "none"
         self.query_one('#max-memories', Input).value = str(s.get("max_memories", "750"))
         self.query_one('#max-dl-memories', Input).value = str(s.get("max_dl_memories", "500"))
+        self.query_one("#extras-user-data-dir", Input).value = s.get("user_data_dir", "user_profile")
+
         self.query_one('#posts-target-input-container', Container).border_title = "Target (Single Post URL, .xlsm, or .txt file)"
         self.shared_delay = str(s.get("delay", "0.0"))
-        self.shared_user_data_dir = s.get("user_data_dir", "user_profile")
+        self.query_one("#posts-user-data-dir", Input).value = s.get("user_data_dir", "user_profile")
         self.shared_timeout = int(s.get("timeout", "30.0"))
         self.shared_max_memories = str(s.get("max_memories", "750"))
         self.shared_max_dl_memories = str(s.get("max_dl_memories", "500"))
@@ -302,14 +302,6 @@ class LiveJournalScraperApp(App):
         extras_target = self.query_one("#extras-target", Input).value
         if not posts_target and extras_target:
             self.query_one("#posts-target", Input).value = extras_target
-
-    @on(Input.Changed, "#extras-user-data-dir, #posts-user-data-dir")
-    def update_shared_user_data_dir(self, event: Input.Changed):
-        self.shared_user_data_dir = event.value
-        if event.input.id == "extras-user-data-dir":
-            self.query_one("#posts-user-data-dir", Input).value = event.value
-        elif event.input.id == "posts-user-data-dir":
-            self.query_one("#extras-user-data-dir", Input).value = event.value
 
     def set_status(self, text: str):
         self.query_one("#status-label", Label).update(f"[b $text-primary]Status:[/b $text-primary] {text}" if text else "[b $text-primary]Status:[/b $text-primary] Ready")
@@ -402,9 +394,6 @@ class LiveJournalScraperApp(App):
             except ValueError:
                 return default
 
-        delay = parse_num("#delay", 0.0, float)
-        headless = self.query_one("#extras-headless-switch", Switch).value
-
         html_tasks = self.query_one("#html-"
                                     "selection", SelectionList).selected
         pdf_tasks = self.query_one("#pdf-selection", SelectionList).selected
@@ -491,6 +480,7 @@ class LiveJournalScraperApp(App):
         if not target:
             print("[bold $text-error]Error: Target is required![/bold $text-error]")
             self.on_scraping_finished()
+            return
 
         user_data_dir = self.query_one("#posts-user-data-dir", Input).value.strip() or "user_profile"
         os.environ["USER_DATA_DIR"] = user_data_dir
