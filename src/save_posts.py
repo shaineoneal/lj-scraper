@@ -256,7 +256,8 @@ class LJPost:
 
         body_el = self.page.locator("body")
         body = await body_el.inner_html()
-        if "This page is not available" in body:
+        comment_count = await self.page.locator('.js-amount').first.inner_html() if await self.page.locator('.js-amount').first.count() > 0 else None
+        if "This page is not available" in body or not comment_count:
             raise ValueError(f"Post not available: {self.url}")
 
         await self._expand_comments()
@@ -561,7 +562,7 @@ async def main_async(target, settings):
             args=["--disable-dev-shm-usage"]
         )
         try:
-            page = await context.new_page()
+            page = context.pages[0] if context.pages else await context.new_page()
             # Set default timeouts
             timeout = settings.get("timeout", 30)
             page.set_default_timeout(int(timeout * 1000))
