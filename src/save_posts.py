@@ -381,7 +381,8 @@ class LJPost:
         await self.render_html()
 
         # Resolve filename
-        filename = f'{output_dir.name}-{self.url.rstrip(".html/").split("/")[-1]}'
+        username = re.sub('_', '-', output_dir.name)
+        filename = f'{username}-{self.url.rstrip(".html/").split("/")[-1]}'
         if filename_index is not None:
             filename += f"&page={filename_index}.html"
         else:
