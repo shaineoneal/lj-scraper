@@ -53,6 +53,7 @@ class LiveJournalScraperApp(App):
     TITLE, SUBTITLE = "LiveJournal Scraper", "Backup your LiveJournal profile and photo albums"
     CSS_PATH = "tui.tcss"
     FORMAT_TASKS = ["entries", "profile", "tags", "userpics", "vgifts", "memories", "photos"]
+    BINDINGS = [("ctrl+c", "graceful_exit", "Quit Safely")]
 
     shared_delay = reactive("0.0")
     shared_max_memories = reactive("750")
@@ -305,6 +306,12 @@ class LiveJournalScraperApp(App):
         extras_target = self.query_one("#extras-target", Input).value
         if not posts_target and extras_target:
             self.query_one("#posts-target", Input).value = extras_target
+
+    def action_graceful_exit(self) -> None:
+        # Gracefully exit the app, ensuring any background tasks are completed or cancelled.
+        if hasattr(self, "_active_worker") and self._active_worker.is_running:
+            print("[bold $text-warning]Warning: A scraping task is still running. Please wait for it to finish.[/bold $text-warning]")
+        self.exit()
 
     def set_status(self, text: str):
         self.query_one("#status-label", Label).update(f"[b $text-primary]Status:[/b $text-primary] {text}" if text else "[b $text-primary]Status:[/b $text-primary] Ready")
