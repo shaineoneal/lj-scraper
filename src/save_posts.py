@@ -480,7 +480,7 @@ def parse_url_target(url: str) -> tuple[str, str]:
     # Check for pattern https://username.livejournal.com/123.html or similar
     match = re.match(r"https?://([^.]+)\.livejournal\.com/(.*)", url, re.IGNORECASE)
     if match:
-        subdomain = match.group(1)
+        subdomain = re.sub('-', '_', match.group(1))
         path = match.group(2)
         if subdomain not in ("www", "m", "mobile", "classic"):
             filename = path.rstrip("/").split("/")[-1]
@@ -491,7 +491,7 @@ def parse_url_target(url: str) -> tuple[str, str]:
     # Check for pattern https://www.livejournal.com/users/username/123.html
     match_users = re.match(r"https?://(?:www\.)?livejournal\.com/users/([^/]+)/(.*)", url, re.IGNORECASE)
     if match_users:
-        username = match_users.group(1)
+        username = re.sub('-', '_', match_users.group(1))
         path = match_users.group(2)
         filename = path.rstrip("/").split("/")[-1]
         if not filename.endswith(".html"):
