@@ -554,8 +554,6 @@ async def main_async(target, settings):
 
     update_status("Launching browser context...")
     async with async_playwright() as p:
-        timeout = settings.get("timeout", 30)
-
         context = await launch_browser_with_fallback(
             p,
             user_data_dir=str(settings.get("user_data_dir", DEFAULT_USER_DATA_DIR)),
@@ -565,6 +563,7 @@ async def main_async(target, settings):
         try:
             page = await context.new_page()
             # Set default timeouts
+            timeout = settings.get("timeout", 30)
             page.set_default_timeout(int(timeout * 1000))
             page.set_default_navigation_timeout(int(timeout * 1000))
             results = await save_posts(page, posts, output_dir, delay=settings.get("delay", 0.0))

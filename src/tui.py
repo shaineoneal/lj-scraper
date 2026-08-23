@@ -217,19 +217,22 @@ class LiveJournalScraperApp(App):
         src.config.console.update_status = lambda text: self._invoke(
             self.set_status, text
         )
+        self.query_one("#btn-posts", Button).styles.display = "none"
         # Repopulate the inputs and selections from the saved initial_settings dict.
         s = self.settings
-        self.query_one("#extras-target", Input).value = s.get("target", "")
         self.query_one("#extras-target-input-container", Grid).border_title = "Target (Username, URL, or .txt file)"
+        self.query_one("#extras-target", Input).value = s.get("target", "")
         self.query_one("#extras-headless-switch", Switch).value = s.get("headless", True)
-        self.query_one("#btn-posts", Button).styles.display = "none"
         self.query_one('#max-memories', Input).value = str(s.get("max_memories", "750"))
         self.query_one('#max-dl-memories', Input).value = str(s.get("max_dl_memories", "500"))
         self.query_one("#extras-user-data-dir", Input).value = s.get("user_data_dir", "user_profile")
 
         self.query_one('#posts-target-input-container', Container).border_title = "Target (Single Post URL, .xlsm, or .txt file)"
-        self.shared_delay = str(s.get("delay", "0.0"))
+        self.query_one("#posts-target", Input).value = s.get("target", "")
+        self.query_one("#posts-headless-switch", Switch).value = s.get("headless", True)
         self.query_one("#posts-user-data-dir", Input).value = s.get("user_data_dir", "user_profile")
+
+        self.shared_delay = str(s.get("delay", "3.0"))
         self.shared_timeout = int(s.get("timeout", "30.0"))
         self.shared_max_memories = str(s.get("max_memories", "750"))
         self.shared_max_dl_memories = str(s.get("max_dl_memories", "500"))
@@ -488,8 +491,23 @@ class LiveJournalScraperApp(App):
         start_time = asyncio.get_event_loop().time()
         all_results = []
 
+        def parse_num(field_id, default, num_type):
+            try:
+                return num_type(self.query_one(field_id, Input).value.strip())
+            except ValueError:
+                return default
+
+
+        settings = {
+            "user_data_dir": user_data_dir,
+            "delay": parse_num("#delay", 3.0, float),
+            "max_memories": parse_num("#max-memories", 750, int),
+            "max_dl_memories": parse_num("#max-dl-memories", 500, int),
+            "headless": self.query_one("#posts-headless-switch", Switch).value,
+        }
         try:
-            await main_async(target, settings=self.settings)
+            async with async_playwright() as p:
+                await main_async(target, settings=settings)
         except Exception as e:
             print(f"\n[bold red]Error: {e}[/bold red]\n")
             import traceback
