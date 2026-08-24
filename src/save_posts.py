@@ -250,12 +250,15 @@ class LJPost:
 
     async def _expand_comments(self) -> None:
         """Expands all comments by clicking 'See More' buttons."""
-        more_comments_el = self.page.locator('.b-leaf-seemore-more, .b-leaf-actions-expandchilds')
-        i = 0
-        while i < await more_comments_el.count() - 2:
-            await self.page.wait_for_load_state("networkidle", timeout=45000)
-            curr_button = more_comments_el.nth(i)
-            await curr_button.click(timeout=5000)
+        more_btn = self.page.locator('.b-leaf-seemore-more, .b-leaf-actions-expandchilds')
+        while await more_btn.count() > 0:
+            await self.page.wait_for_load_state("domcontentloaded", timeout=45000)
+            curr_button = more_btn.first
+            try:
+                await curr_button.click(timeout=7500)
+            except Exception as e:
+                if await more_btn.count() > 0:
+                    print(f"Warning: Failed to click 'See More' button: {e}")
         await self.page.wait_for_timeout(5000)
 
     async def load(self, delay_s=5.0, index=1) -> None:
@@ -263,7 +266,7 @@ class LJPost:
         update_status(f"Loading post: {self.url} (Page {index})")
         delay = delay_s * 1000
         target_url = f"{self.url}?s2id=46580551" + (f"&page={index}" if index > 1 else "")
-        await self.page.goto(target_url, wait_until="networkidle")
+        await self.page.goto(target_url, wait_until="networkidle", timeout=60000)
         await self.page.wait_for_timeout(delay)
 
         body = await self.page.locator("body").inner_html()
