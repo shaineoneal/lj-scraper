@@ -4,14 +4,9 @@ import re
 import sys
 from pathlib import Path
 
-from rich.panel import Panel
-from rich.table import Table
-
 from src.browser import launch_browser_with_fallback
-
 from .config import (
     DEFAULT_USER_DATA_DIR,
-    load_config,
     update_status,
 )
 
@@ -21,7 +16,6 @@ if __name__ == "__main__" and not __package__:
     __package__ = "src"
 
 from openpyxl import load_workbook
-from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page, async_playwright
 
 # ==============================================================================
@@ -194,101 +188,95 @@ body > article > div.b-singlepost-qrcode.ng-isolate-scope{display: none;}
 .b-pager-shortcut,.b-pager-nopages .b-pager-pages,.b-pager-nopages .b-pager-prev .b-pager-shortcut,.b-pager-nopages .b-pager-prev BR{display:none}
 """
 
+
 # ==============================================================================
 # DECOUPLED BUSINESS LOGIC FUNCTIONS
 # ==============================================================================
 
 def extract_urls_from_excel(excel_file_path: Path | str) -> list[str]:
-    """
-    Loads an Excel workbook and reads target post URLs from Column H (skipping header).
-
-    Args:
-        excel_file_path: Path to the target Excel (.xlsx) file.
-
-    Returns:
-        list[str]: List of target post URLs.
-    """
-
     wb = load_workbook(excel_file_path)
     ws = wb.active
     if ws is None:
         raise ValueError("No active worksheet found in the Excel file.")
 
-    posts: list[str] = [cell.value for cell in ws['H'][1:] if cell.value]
+    return [cell.value for cell in ws['H'][1:] if cell.value]
 
-    return posts
+
+def parse_url_target(url: str) -> tuple[str, str]:
+    """
+    Parses a LiveJournal post URL to extract (username, post_filename).
+    """
+    # Check for pattern https://username.livejournal.com/123.html or similar
+    match = re.match(r"https?://([^.]+)\.livejournal\.com/(.*)", url, re.IGNORECASE)
+    if match:
+        subdomain = re.sub('-', '_', match.group(1))
+        path = match.group(2)
+        if subdomain not in ("www", "m", "mobile", "classic"):
+            filename = path.rstrip("/").split("/")[-1]
+            if not filename.endswith(".html"):
+                filename = f"{filename}.html"
+            return subdomain, filename
+
+    # Check for pattern https://www.livejournal.com/users/username/123.html
+    match_users = re.match(r"https?://(?:www\.)?livejournal\.com/users/([^/]+)/(.*)", url, re.IGNORECASE)
+    if match_users:
+        username = re.sub('-', '_', match_users.group(1))
+        path = match_users.group(2)
+        filename = path.rstrip("/").split("/")[-1]
+        if not filename.endswith(".html"):
+            filename = f"{filename}.html"
+        return username, filename
+
+    # Fallback
+    filename = url.rstrip("/").split("/")[-1]
+    if not filename.endswith(".html"):
+        filename = f"{filename}.html"
+    return "single_posts", filename
 
 
 class LJPost:
-    """
-    Represents a LiveJournal post. Handles page navigation, extraction of sections
-    (title, author/about, content, footer), and archiving the post as HTML.
-    """
 
     def __init__(self, page: Page, url: str):
+        self.comments_html = ""
         self.page: Page = page
         self.url: str = url
         self.title: str = "No Subject"
-        self.html_content = None
+        self.html_content = ""
         self.page_count = 1
 
+    async def _extract_html(self, selector: str) -> str:
+        loc = self.page.locator(selector)
+        return await loc.first.inner_html() if await loc.count() > 0 else ""
 
     async def _expand_comments(self) -> None:
         """Expands all comments by clicking 'See More' buttons."""
         more_comments_el = self.page.locator('.b-leaf-seemore-more, .b-leaf-actions-expandchilds')
-        while await more_comments_el.count() > 3:
-            try:
-                await more_comments_el.first.click()
-            except Exception:
-                break  # Exit if unable to click
+        i = 0
+        while i < await more_comments_el.count() - 2:
+            await self.page.wait_for_load_state("networkidle", timeout=45000)
+            curr_button = more_comments_el.nth(i)
+            await curr_button.click(timeout=5000)
+        await self.page.wait_for_timeout(5000)
 
-    async def load(self, delay = 5.0, index=1) -> None:
+    async def load(self, delay_s=5.0, index=1) -> None:
         """Navigates to the post URL."""
         update_status(f"Loading post: {self.url} (Page {index})")
-        if index == 1:
-            await self.page.goto(f"{self.url}?s2id=46580551", wait_until="networkidle")
-            await self.page.wait_for_timeout(delay)
+        delay = delay_s * 1000
+        target_url = f"{self.url}?s2id=46580551" + (f"&page={index}" if index > 1 else "")
+        await self.page.goto(target_url, wait_until="networkidle")
+        await self.page.wait_for_timeout(delay)
 
-            self.page_count = await self.page.locator("li.b-pager-page").count()/2.0 or 1
-        else:
-            await self.page.goto(f"{self.url}?s2id=46580551&page={index}", wait_until="networkidle")
-            await self.page.wait_for_timeout(delay)
-
-        body_el = self.page.locator("body")
-        body = await body_el.inner_html()
-        comment_count = await self.page.locator('.js-amount').first.inner_html() if await self.page.locator('.js-amount').first.count() > 0 else None
+        body = await self.page.locator("body").inner_html()
+        comment_count = await self.page.locator('.js-amount').first.inner_html() if await self.page.locator(
+            '.js-amount').first.count() > 0 else None
         if "This page is not available" in body or not comment_count:
             raise ValueError(f"Post not available: {self.url}")
 
+        if index == 1:
+            self.page_count = await self.page.locator("li.b-pager-page").count() / 2.0 or 1
+
         await self._expand_comments()
         await self.page.wait_for_timeout(delay)
-
-    async def _extract_title(self) -> str:
-        """Extracts the post title, defaulting to 'No Subject' if not found."""
-        try:
-            await self.page.wait_for_selector(".b-singlepost-about", timeout=5000)
-            self.title = await self.page.locator('.b-singlepost-title').inner_text(timeout=5000)
-        except PlaywrightError:
-            self.title = "No Subject"
-        return self.title
-
-    async def _extract_about(self) -> str:
-        try:
-            loc = self.page.locator('.b-singlepost-about')
-            if await loc.count() > 0:
-                return await loc.inner_html()
-        except Exception:
-            pass
-        return ""
-
-    async def _extract_post_content(self) -> str:
-        try:
-            loc = self.page.locator('.b-singlepost-wrapper')
-            if await loc.count() > 0:
-                return await loc.inner_html()
-        except Exception:
-            pass
-        return ""
 
     async def _extract_footer(self) -> str:
         try:
@@ -301,84 +289,36 @@ class LJPost:
                     r'<p\4><a href="\1" class="b-nav-posts__link" target="_self">\5</a></p>',
                     footer_el)
 
-
                 if footer_el:
                     return "<div prev-next-nav>" + footer_el + "</div></body>\n</html>"
         except Exception:
             pass
         return ""
 
-    async def _extract_comment_count(self) -> str:
-        try:
-            loc = self.page.locator('.js-amount').first
-            if await loc.count() > 0:
-                comment_count = await loc.inner_html()
-                return comment_count.strip().split(" ")[0]  # Extract numeric part
-        except Exception:
-            pass
-        return "0"
-
-    async def _extract_comments(self) -> str:
-        try:
-            loc = self.page.locator('.b-tree-root')
-            if await loc.count() > 0:
-                return await loc.inner_html()
-
-        except Exception:
-            pass
-        return ""
-
-    async def _create_header(self) -> str:
-        """
-        Constructs the HTML header with the extracted title and custom CSS.
-        """
-        header = f"""<!DOCTYPE html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{self.title}</title>
-    <style>
-        {CUSTOM_CSS}
-    </style>
-</head>
-<body>"""
-        return header
-
-    async def _extract_pagination(self) -> str:
-        try:
-            loc = self.page.locator('.b-pager--showpages')
-            if await loc.count() > 0:
-                return await loc.first.inner_html()
-        except Exception:
-            pass
-        return ""
-
+    async def append_comments(self) -> None:
+        self.comments_html += await self._extract_html('.b-tree-root')
 
     async def render_html(self) -> str:
-        """
-        Extracts all post elements (about, wrapper, footer) and renders them
-        using the CUSTOM_CSS stylesheet.
-        """
-        # Ensure title is extracted
-        await self._extract_title()
 
-        comment_count = await self._extract_comment_count()
-        post = f"{await self._extract_post_content()} \n<br> <h3>{comment_count} Comment(s)</h3>"
-        self.html_content = await self._create_header() + await self._extract_about() + post
-        if self.page_count < 5:
-            for p in range(1, int(self.page_count) + 1):
-                await self.load(index=p)
-                self.html_content += await self._extract_comments()
-        else:
-            self.html_content += await self._extract_comments() + await self._extract_pagination()
-        self.html_content += await self._extract_footer()
+        title_el = self.page.locator('.b-singlepost-title')
+        self.title = await title_el.inner_text() if await title_el.count() > 0 else "No Subject"
+
+        cc_el = await self._extract_html('.js-amount')
+        comment_count = cc_el.strip().split(" ")[0] if cc_el else "0"
+
+        header = f"<!DOCTYPE html><head><meta charset='UTF-8'><title>{self.title}</title><style>{CUSTOM_CSS}</style></head><body>"
+        about = await self._extract_html('.b-singlepost-about')
+        content = await self._extract_html('.b-singlepost-wrapper')
+        pagination = await self._extract_html('.b-pager--showpages') if self.page_count >= 5 else ""
+        footer = await self._extract_footer()
+
+        self.html_content = f"{header}{about}{content}\n<br><h3>{comment_count} Comment(s)</h3>{self.comments_html}{pagination}{footer}"
         return self.html_content
 
-    async def save_to_file(self, output_dir: Path, filename_index= None) -> Path:
-        """
-        Renders the post HTML and saves it to a file.
-        """
-        await self.render_html()
+    async def save_to_file(self, output_dir: Path, filename_index=None) -> Path:
+
+        if not self.html_content:
+            await self.render_html()
 
         # Resolve filename
         username = re.sub('_', '-', output_dir.name)
@@ -394,26 +334,6 @@ class LJPost:
             f.write(self.html_content)
 
         return save_path
-
-
-async def create_post_html(page: Page) -> str | None:
-    """
-    Constructs a formatted HTML template of a LiveJournal post using target Page selectors.
-    (Compatibility wrapper using the LJPost class).
-
-    Args:
-        page: Playwright Page instance.
-
-    Returns:
-        str | None: Formatted HTML block of the post or None if selector lookup failed.
-    """
-    try:
-        url = page.url
-        post = LJPost(page, url)
-        return await post.render_html()
-    except Exception as e:
-        print(f"Error creating post HTML: {e}")
-        return None
 
 
 async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay: float = 0.0) -> dict:
@@ -452,12 +372,20 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay
             # Load the post page
 
             jitter = delay * random.uniform(0.5, 1.5)
-            await post.load(delay=jitter)
+            await post.load(delay_s=jitter)
+            await post.append_comments()
+
             if post.page_count < 5:
+                for page_num in range(2, int(post.page_count) + 1):
+                    await post.load(delay_s=jitter, index=page_num)
+                    await post.append_comments()
                 await post.save_to_file(output_path)
             else:
+                await post.save_to_file(output_path, filename_index=1)
                 for page_num in range(1, int(post.page_count) + 1):
-                    await post.load(delay=jitter, index=page_num)
+                    post.comments_html = ""  # Reset comments for each page
+                    await post.load(delay_s=jitter, index=page_num)
+                    await post.append_comments()
                     await post.save_to_file(output_path, filename_index=page_num)
             results["success_count"] += 1
 
@@ -473,40 +401,7 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay
 # CLI RUNNER ENTRY POINT
 # ==============================================================================
 
-def parse_url_target(url: str) -> tuple[str, str]:
-    """
-    Parses a LiveJournal post URL to extract (username, post_filename).
-    """
-    # Check for pattern https://username.livejournal.com/123.html or similar
-    match = re.match(r"https?://([^.]+)\.livejournal\.com/(.*)", url, re.IGNORECASE)
-    if match:
-        subdomain = re.sub('-', '_', match.group(1))
-        path = match.group(2)
-        if subdomain not in ("www", "m", "mobile", "classic"):
-            filename = path.rstrip("/").split("/")[-1]
-            if not filename.endswith(".html"):
-                filename = f"{filename}.html"
-            return subdomain, filename
-
-    # Check for pattern https://www.livejournal.com/users/username/123.html
-    match_users = re.match(r"https?://(?:www\.)?livejournal\.com/users/([^/]+)/(.*)", url, re.IGNORECASE)
-    if match_users:
-        username = re.sub('-', '_', match_users.group(1))
-        path = match_users.group(2)
-        filename = path.rstrip("/").split("/")[-1]
-        if not filename.endswith(".html"):
-            filename = f"{filename}.html"
-        return username, filename
-
-    # Fallback
-    filename = url.rstrip("/").split("/")[-1]
-    if not filename.endswith(".html"):
-        filename = f"{filename}.html"
-    return "single_posts", filename
-
-
 async def main_async(target, settings):
-
     update_status("Initializing...")
 
     posts = []
@@ -562,11 +457,7 @@ async def main_async(target, settings):
         )
         try:
             page = context.pages[0] if context.pages else await context.new_page()
-            # Set default timeouts
-            timeout = settings.get("timeout", 30)
-            page.set_default_timeout(int(timeout * 1000))
-            page.set_default_navigation_timeout(int(timeout * 1000))
-            results = await save_posts(page, posts, output_dir, delay=settings.get("delay", 0.0))
+            results = await save_posts(page, posts, output_dir, delay=settings.get("delay", 5.0))
             print(f"\n[bold $success]Completed! Saved {results['success_count']} posts. Failed: {len(results['failed_urls'])}[/bold $success]")
         finally:
             await context.close()
