@@ -22,7 +22,7 @@ from playwright.async_api import Page, async_playwright
 # CSS & STYLING CONSTANTS
 # ==============================================================================
 
-CUSTOM_CSS = """
+CUSTOM_CSS = r"""
 body > article > div.b-singlepost-qrcode.ng-isolate-scope{display: none;}
 .b-leaf-footer{display: none;}  
 .b-singlepost .i-ljuser B,.b-singlepost-meta-title{font-family:ProximaNova,Tahoma,Arial,sans-serif;font-weight:600}
