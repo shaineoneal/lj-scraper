@@ -228,7 +228,7 @@ class LiveJournalScraperApp(App):
         self.query_one('#max-dl-memories', Input).value = str(s.get("max_dl_memories", "500"))
         self.query_one("#extras-user-data-dir", Input).value = s.get("user_data_dir", "user_profile")
 
-        self.query_one('#posts-target-input-container', Container).border_title = "Target (Single Post URL, .xlsm, or .txt file)"
+        self.query_one('#posts-target-input-container', Container).border_title = "Target (Single Post URL, .xlsx, or .txt file)"
         self.query_one("#posts-target", Input).value = s.get("target", "")
         self.query_one("#posts-headless-switch", Switch).value = s.get("headless", True)
         self.query_one("#posts-user-data-dir", Input).value = s.get("user_data_dir", "user_profile")

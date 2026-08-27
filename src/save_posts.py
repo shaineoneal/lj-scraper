@@ -188,7 +188,6 @@ body > article > div.b-singlepost-qrcode.ng-isolate-scope{display: none;}
 .b-pager-shortcut,.b-pager-nopages .b-pager-pages,.b-pager-nopages .b-pager-prev .b-pager-shortcut,.b-pager-nopages .b-pager-prev BR{display:none}
 """
 
-
 # ==============================================================================
 # DECOUPLED BUSINESS LOGIC FUNCTIONS
 # ==============================================================================
@@ -237,12 +236,12 @@ def parse_url_target(url: str) -> tuple[str, str]:
 class LJPost:
 
     def __init__(self, page: Page, url: str):
-        self.comments_html = ""
+        self.comments: list[str] = []
         self.page: Page = page
         self.url: str = url
         self.title: str = "No Subject"
-        self.html_content = ""
         self.page_count = 1
+        self.post_html = ""
 
     async def _extract_html(self, selector: str) -> str:
         loc = self.page.locator(selector)
@@ -263,7 +262,10 @@ class LJPost:
 
     async def load(self, delay_s=5.0, index=1) -> None:
         """Navigates to the post URL."""
-        update_status(f"Loading post: {self.url} (Page {index})")
+        if self.page_count == 1:
+            update_status(f"Loading post: {self.url}")
+        else:
+            update_status(f"Loading post: {self.url} ({index}/{int(self.page_count)})")
         delay = delay_s * 1000
         target_url = f"{self.url}?s2id=46580551" + (f"&page={index}" if index > 1 else "")
         await self.page.goto(target_url, wait_until="networkidle", timeout=60000)
@@ -299,10 +301,24 @@ class LJPost:
         return ""
 
     async def append_comments(self) -> None:
-        self.comments_html += await self._extract_html('.b-tree-root')
+        self.comments.append(await self._extract_html('.b-tree-root'))
 
-    async def render_html(self) -> str:
+    async def render_html(self, username) -> str:
+        pagination = await self._extract_html('.b-pager--showpages') if self.page_count >= 5 else ""
+        # change hrefs
+        def _pag_sub(match):
+            href = match.group(1)
+            if "page=" in href:
+                page_num = re.search(r"page=(\d+)", href)
+                if page_num:
+                    return f'href="{username}-{self.url.split("?")[0].rstrip(".html/").split("/")[-1]}&page={page_num.group(1)}.html"'
+            return f'href="{username}-{self.url.split("?")[0].rstrip(".html/").split("/")[-1]}.html"'
+        pagination = re.sub(r'href="([^"]+)"', _pag_sub, pagination)
+        footer = await self._extract_footer()
 
+        return f"{self.post_html}{''.join(self.comments)}{pagination}{footer}"
+
+    async def fetch_post_html(self) -> None:
         title_el = self.page.locator('.b-singlepost-title')
         self.title = await title_el.inner_text() if await title_el.count() > 0 else "No Subject"
 
@@ -312,20 +328,13 @@ class LJPost:
         header = f"<!DOCTYPE html><head><meta charset='UTF-8'><title>{self.title}</title><style>{CUSTOM_CSS}</style></head><body>"
         about = await self._extract_html('.b-singlepost-about')
         content = await self._extract_html('.b-singlepost-wrapper')
-        pagination = await self._extract_html('.b-pager--showpages') if self.page_count >= 5 else ""
-        footer = await self._extract_footer()
 
-        self.html_content = f"{header}{about}{content}\n<br><h3>{comment_count} Comment(s)</h3>{self.comments_html}{pagination}{footer}"
-        return self.html_content
-
+        self.post_html = f"{header}{about}{content}\n<br><h3>{comment_count} Comment(s)</h3>"
     async def save_to_file(self, output_dir: Path, filename_index=None) -> Path:
-
-        if not self.html_content:
-            await self.render_html()
 
         # Resolve filename
         username = re.sub('_', '-', output_dir.name)
-        filename = f'{username}-{self.url.rstrip(".html/").split("/")[-1]}'
+        filename = f'{username}-{self.url.split("?")[0].rstrip(".html/").split("/")[-1]}'
         if filename_index is not None:
             filename += f"&page={filename_index}.html"
         else:
@@ -334,7 +343,7 @@ class LJPost:
         print(f"    Saving post to: {output_dir / filename}")
         save_path = Path(output_dir) / f"{filename}"
         with open(save_path, "w", encoding="utf-8") as f:
-            f.write(self.html_content)
+            f.write(await self.render_html(username))
 
         return save_path
 
@@ -394,17 +403,19 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay
 
             jitter = delay * random.uniform(0.5, 1.5)
             await post.load(delay_s=jitter)
+            await post.fetch_post_html()
             await post.append_comments()
 
             if post.page_count < 5:
-                for page_num in range(2, int(post.page_count) + 1):
-                    await post.load(delay_s=jitter, index=page_num)
-                    await post.append_comments()
+                if post.page_count > 1:
+                    for page_num in range(2, int(post.page_count) + 1):
+                        await post.load(delay_s=jitter, index=page_num)
+                        await post.append_comments()
                 await post.save_to_file(output_path)
             else:
                 await post.save_to_file(output_path, filename_index=1)
-                for page_num in range(1, int(post.page_count) + 1):
-                    post.comments_html = ""  # Reset comments for each page
+                for page_num in range(2, int(post.page_count) + 1):
+                    post.comments = []  # Reset comments for each page
                     await post.load(delay_s=jitter, index=page_num)
                     await post.append_comments()
                     await post.save_to_file(output_path, filename_index=page_num)
