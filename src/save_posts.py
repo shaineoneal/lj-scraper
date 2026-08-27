@@ -368,6 +368,24 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay
         update_status("Saving post(s)...")
         print(f"[{idx}/{len(posts)}] Scraping post: {post_url}")
 
+        if "page=" in post_url:
+            print(f"    Warning: Post URL contains 'page=' parameter. Only that page will be saved.")
+            # Instantiate the LJPost helper
+            post = LJPost(page, post_url)
+
+            # Load the post page
+            jitter = delay * random.uniform(0.5, 1.5)
+            try:
+                await post.load(delay_s=jitter)
+                await post.append_comments()
+
+                page_num = re.search(r"page=(\d+)", post_url)
+                await post.save_to_file(output_path, filename_index=int(page_num.group(1)) if page_num else None)
+                results["success_count"] += 1
+            except Exception as err:
+                print(f"Error processing post {post_url}: {err}")
+                results["failed_urls"].append(post_url)
+            break  # Skip to next post since this one is already processed
         try:
             # Instantiate the LJPost helper
             post = LJPost(page, post_url)
