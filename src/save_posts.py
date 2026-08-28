@@ -386,6 +386,7 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay
             jitter = delay * random.uniform(0.5, 1.5)
             try:
                 await post.load(delay_s=jitter)
+                await post.fetch_post_html()
                 await post.append_comments()
 
                 page_num = re.search(r"page=(\d+)", post_url)
