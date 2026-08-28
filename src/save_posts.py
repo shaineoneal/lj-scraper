@@ -249,7 +249,7 @@ class LJPost:
 
     async def _expand_comments(self) -> None:
         """Expands all comments by clicking 'See More' buttons."""
-        more_btn = self.page.locator('.b-leaf-seemore-more, .b-leaf-actions-expandchilds')
+        more_btn = self.page.locator('.b-leaf-seemore-more, .b-leaf-actions-expandchilds, .b-leaf-collapsed .b-leaf-actions-expand')
         while await more_btn.count() > 0:
             await self.page.wait_for_load_state("domcontentloaded", timeout=45000)
             curr_button = more_btn.first
