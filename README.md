@@ -120,6 +120,10 @@ options:
                         Maximum number of memories to scrape (default: 750).
   --max-dl-memories [MAX_DL_MEMORIES]
                         Maximum number of memories to download (default: 500).
+  --tab {extras,posts}  Initial tab to focus on startup (extras or posts).
+  --posts               Focus the Posts tab on startup.
+  --instant-start {extras,posts}
+                        Instantly start scraping after tui is loaded.
 
 Selective profile scraping flags:
   If none of these are selected, the tool scrapes all components by default.

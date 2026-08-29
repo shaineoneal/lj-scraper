@@ -121,8 +121,9 @@ class LiveJournalScraperApp(App):
     def compose(self) -> ComposeResult:
         # compose() builds the widget tree once on startup to define the static layout hierarchy.
         yield Header()
+        initial_tab = "tab-posts" if self.settings.get("tab") == "posts" else "tab-extras"
         with Container(id="main-layout"):
-            with TabbedContent(id="sidebar", initial="tab-extras"):
+            with TabbedContent(id="sidebar", initial=initial_tab):
                 with TabPane("Extras", id="tab-extras"):
                     with VerticalScroll():
                         with Grid(id="extras-target-input-container"):
@@ -237,9 +238,16 @@ class LiveJournalScraperApp(App):
         src.config.console.update_status = lambda text: self._invoke(
             self.set_status, text
         )
-        self.query_one("#btn-posts", Button).styles.display = "none"
         # Repopulate the inputs and selections from the saved initial_settings dict.
         s = self.settings
+        initial_tab = "tab-posts" if s.get("tab") == "posts" else "tab-extras"
+        if initial_tab == "tab-posts":
+            self.query_one("#sidebar", TabbedContent).active = "tab-posts"
+            self.query_one("#btn-posts", Button).styles.display = "block"
+            self.query_one("#btn-extras", Button).styles.display = "none"
+        else:
+            self.query_one("#btn-posts", Button).styles.display = "none"
+            self.query_one("#btn-extras", Button).styles.display = "block"
         self.query_one("#extras-target-input-container", Grid).border_title = "Target (Username, URL, or .txt file)"
         self.query_one("#extras-target", Input).value = s.get("target", "")
         self.query_one("#extras-headless-switch", Switch).value = s.get("headless", True)
@@ -253,7 +261,7 @@ class LiveJournalScraperApp(App):
         self.query_one("#posts-user-data-dir", Input).value = s.get("user_data_dir", "user_profile")
 
         self.shared_delay = str(s.get("delay", "3.0"))
-        self.shared_timeout = int(s.get("timeout", "30.0"))
+        self.shared_timeout = int(float(s.get("timeout", "30.0")))
         self.shared_max_memories = str(s.get("max_memories", "750"))
         self.shared_max_dl_memories = str(s.get("max_dl_memories", "500"))
         self.shared_log_file = str(s.get("log_file", "scraper.log"))
@@ -305,7 +313,10 @@ class LiveJournalScraperApp(App):
             )
         else:
             print('')
-        self.query_one("#extras-target", Input).focus()
+        if self.query_one("#sidebar", TabbedContent).active == "tab-posts":
+            self.query_one("#posts-target", Input).focus()
+        else:
+            self.query_one("#extras-target", Input).focus()
 
     @on(TabbedContent.TabActivated, pane='#tab-extras')
     def display_extras_button(self) -> None:

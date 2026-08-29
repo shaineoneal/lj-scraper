@@ -31,7 +31,8 @@ DEFAULT_SETTINGS = {
     "userpics": "both",
     "vgifts": "both",
     "memories": "both",
-    "photos": "both"
+    "photos": "both",
+    "tab": "extras"
 }
 
 def load_config(path: Path = CONFIG_FILE) -> dict:

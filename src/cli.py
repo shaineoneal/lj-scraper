@@ -78,7 +78,11 @@ async def main_async():
                         help="Maximum number of memories to download (default: 500).")
 
     parser.add_argument("--instant-start", choices=["extras", "posts"],
-                        help="Instantly start scraping after tui is loaded")
+                        help="Immediately start scraping the specified tab (extras or posts) without waiting for user input.")
+    parser.add_argument("--tab", choices=["extras", "posts"], default=None,
+                        help="Select which tab to scrape (extras or posts).")
+    parser.add_argument("--posts", action="store_true", default=None,
+                        help="Focus the Posts tab on startup.")
 
     try:
         args, unknown = parser.parse_known_args()
@@ -90,6 +94,9 @@ async def main_async():
 
     # Sync parsed args back into config.settings
     settings.update({k: v for k, v in vars(args).items() if v is not None})
+
+    if settings.get("posts") or settings.get("instant_start") == "posts":
+        settings["tab"] = "posts"
 
     log_file = settings.get("log_file", "scraper.log")
     setup_file_logging(log_file)
