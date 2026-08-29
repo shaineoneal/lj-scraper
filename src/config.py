@@ -15,9 +15,12 @@ def update_status(text: str) -> None:
         console.print(f"[dim]{text}[/dim]")
 
 CONFIG_FILE = Path("config.json")
+DEFAULT_LOG_FILE = "scraper.log"
+current_log_file = DEFAULT_LOG_FILE
 
 DEFAULT_SETTINGS = {
     "user_data_dir": "user_profile",
+    "log_file": DEFAULT_LOG_FILE,
     "max_memories": 750,
     "max_dl_memories": 500,
     "delay": 3.0,

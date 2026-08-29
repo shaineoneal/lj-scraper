@@ -26,7 +26,7 @@ import rich.progress
 from .save_posts import main_async
 from .browser import run_login_flow, launch_browser_with_fallback
 from .account_scraper import LiveJournalAccount
-from .utils import parse_targets
+from .utils import parse_targets, setup_file_logging
 
 os.environ["COLORTERM"] = "truecolor"
 
@@ -59,6 +59,7 @@ class LiveJournalScraperApp(App):
     shared_max_memories = reactive("750")
     shared_max_dl_memories = reactive("500")
     shared_timeout = reactive("30.0")
+    shared_log_file = reactive("scraper.log")
 
     def __init__(self, initial_settings=None, unknown_args=None, **kwargs):
         super().__init__(**kwargs)
@@ -73,21 +74,30 @@ class LiveJournalScraperApp(App):
         try: self.call_from_thread(f, *a, **k)
         except RuntimeError: f(*a, **k)
 
-    def _render_log(self, markup: str, **kwargs) -> str:
-        rendered = markup
-        for key, value in kwargs.items():
-            value = re.sub(r"(?<!\\)\[", "\\\\[", str(value))
-            value = re.sub(r"(?<!\\)]", "]", str(value))
-            rendered = rendered.replace(f"${key}", str(value))
-        return rendered
+    def _get_current_log_file(self) -> str:
+        try:
+            pane = "posts" if self.query_one("#sidebar", TabbedContent).active == "tab-posts" else "extras"
+            if val := self.query_one(f"#{pane}-log-file", Input).value.strip():
+                return val
+        except Exception:
+            pass
+        return self.settings.get("log_file", src.config.current_log_file)
 
-    def _write_log_markup(self, markup, **kwargs) -> None:
-        self._log_entries.append(self._render_log(markup, **kwargs))
+    def _ui_write_log(self, rendered_items: list) -> None:
         log_view = self.query_one("#log-view", RichLog)
-        if type(markup) is not str:
-            log_view.write(markup, **kwargs)
-        else:
-            log_view.write(Content.from_markup(markup, **kwargs))
+        for item in rendered_items:
+            if isinstance(item, str):
+                self._log_entries.append(item)
+                try:
+                    log_view.write(Content.from_markup(item))
+                except Exception:
+                    log_view.write(item)
+            else:
+                self._log_entries.append(str(item))
+                log_view.write(item)
+
+    def on_unmount(self) -> None:
+        setup_file_logging(sink=False)
 
     def _clear_log(self) -> None:
         self._log_entries.clear()
@@ -99,7 +109,10 @@ class LiveJournalScraperApp(App):
         self._invoke(log_view.clear)
         if len(self._log_entries) > 0:
             for entry in self._log_entries:
-                log_view.write(Content.from_markup(entry))
+                try:
+                    log_view.write(Content.from_markup(entry))
+                except Exception:
+                    log_view.write(entry)
 
     def watch_theme(self, old_theme: str, new_theme: str) -> None:
         # forces it to wait for the stylesheet to update
@@ -155,6 +168,10 @@ class LiveJournalScraperApp(App):
                                     yield Rule(line_style="ascii")
                                     yield Input(classes="number", compact=True, type="number", id="timeout",
                                                 value=str(self.shared_timeout))
+                                with Horizontal(id="extras-log-file-container"):
+                                    yield Label("Log File Location", id="extras-log-file-label")
+                                    yield Rule(line_style="ascii")
+                                    yield Input(id="extras-log-file", compact=True, value=self.shared_log_file)
 
                 with TabPane("Posts", id="tab-posts"):
                     with VerticalScroll():
@@ -182,9 +199,13 @@ class LiveJournalScraperApp(App):
                                     yield Rule(line_style="ascii")
                                     yield Input(classes="number", compact=True, type="number", id="timeout",
                                                 value=self.shared_timeout)
+                                with Horizontal(id="posts-log-file-container"):
+                                    yield Label("Log File Location", id="posts-log-file-label")
+                                    yield Rule(line_style="ascii")
+                                    yield Input(id="posts-log-file", compact=True, value=self.shared_log_file)
             with Vertical(id="log-container"):
                 yield Label("EXECUTION LOGS", classes="title")
-                yield RichLog(highlight=False, markup=True, id="log-view")
+                yield RichLog(markup=True, id="log-view")
                 yield DataTable(id="results-table", cursor_type="row", zebra_stripes=True, show_header=True, show_cursor=True, show_row_labels=False)
 
         with Horizontal(id="status-panel"):
@@ -208,10 +229,8 @@ class LiveJournalScraperApp(App):
         sidebar = self.query_one("#sidebar")
         sidebar.border_title = "SCRAPER SETTINGS"
 
-        # override the default print and force it to use textual's colors
-        def new_print(*args, **kwargs):
-            self._write_log_markup(*args, **kwargs)
-        builtins.print = new_print
+        # Route prints to Textual's RichLog
+        setup_file_logging(sink=self._ui_write_log)
         src.config.console.status = lambda text, spinner="dots": TextualStatus(
             src.config.console, text
         )
@@ -237,6 +256,10 @@ class LiveJournalScraperApp(App):
         self.shared_timeout = int(s.get("timeout", "30.0"))
         self.shared_max_memories = str(s.get("max_memories", "750"))
         self.shared_max_dl_memories = str(s.get("max_dl_memories", "500"))
+        self.shared_log_file = str(s.get("log_file", "scraper.log"))
+
+        self.query_one("#extras-log-file", Input).value = self.shared_log_file
+        self.query_one("#posts-log-file", Input).value = self.shared_log_file
 
         try:
             html_list = self.query_one("#html-selection", SelectionList)
@@ -294,6 +317,9 @@ class LiveJournalScraperApp(App):
         posts_target = self.query_one("#posts-target", Input).value
         if not extras_target and posts_target:
             self.query_one("#extras-target", Input).value = posts_target
+        posts_log = self.query_one("#posts-log-file", Input).value
+        if posts_log:
+            self.query_one("#extras-log-file", Input).value = posts_log
 
 
     @on(TabbedContent.TabActivated, pane='#tab-posts')
@@ -306,6 +332,9 @@ class LiveJournalScraperApp(App):
         extras_target = self.query_one("#extras-target", Input).value
         if not posts_target and extras_target:
             self.query_one("#posts-target", Input).value = extras_target
+        extras_log = self.query_one("#extras-log-file", Input).value
+        if extras_log:
+            self.query_one("#posts-log-file", Input).value = extras_log
 
     def action_graceful_exit(self) -> None:
         # Gracefully exit the app, ensuring any background tasks are completed or cancelled.
@@ -413,8 +442,12 @@ class LiveJournalScraperApp(App):
             is_pdf = task in pdf_tasks
             format_options[task] = "both" if is_html and is_pdf else "html" if is_html else "pdf" if is_pdf else False
 
+        log_file = self._get_current_log_file()
+        src.config.current_log_file = log_file
+
         settings = {
             "user_data_dir": user_data_dir,
+            "log_file": log_file,
             "delay": parse_num("#delay", 3.0, float),
             "max_memories": parse_num("#max-memories", 750, int),
             "max_dl_memories": parse_num("#max-dl-memories", 500, int),
@@ -505,8 +538,12 @@ class LiveJournalScraperApp(App):
                 return default
 
 
+        log_file = self._get_current_log_file()
+        src.config.current_log_file = log_file
+
         settings = {
             "user_data_dir": user_data_dir,
+            "log_file": log_file,
             "delay": parse_num("#delay", 3.0, float),
             "max_memories": parse_num("#max-memories", 750, int),
             "max_dl_memories": parse_num("#max-dl-memories", 500, int),

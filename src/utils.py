@@ -1,11 +1,15 @@
+import builtins
 import os
 import re
 import sys
+from datetime import datetime
+from io import StringIO
 from pathlib import Path
 
 import pymupdf
 from playwright.async_api import Error as PlaywrightError, expect
 from playwright.async_api import Page
+from rich.console import Console
 from rich.table import Table
 
 from .config import USERNAME_PATTERN, update_status
@@ -18,6 +22,83 @@ if hasattr(sys.stderr, 'reconfigure'):
 
 # Suppress mupdf display errors
 pymupdf.TOOLS.mupdf_display_errors(False)
+
+_original_print = builtins.print
+_ui_sink = None
+
+def strip_markup(text: str) -> str:
+    """Strip Rich/Textual markup tags from a string."""
+    return re.sub(r"\[/?[a-zA-Z0-9_\$# -]+\]", "", text)
+
+def render_to_plain_text(obj) -> str:
+    """Render any object or markup string to plain text for file logging."""
+    if isinstance(obj, str):
+        return strip_markup(obj)
+    try:
+        sio = StringIO()
+        temp_console = Console(file=sio, force_terminal=False, color_system=None, width=120)
+        temp_console.print(obj)
+        return sio.getvalue().rstrip("\r\n")
+    except Exception:
+        return strip_markup(str(obj))
+
+def log_to_file(text: str, log_file: str | Path = None) -> None:
+    if not text:
+        return
+    try:
+        from . import config
+        target_path = Path(log_file or config.current_log_file)
+        if target_path.parent:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        body = "\n".join(f"[{ts}] {l}" if l.strip() else "" for l in text.splitlines())
+        with open(target_path, "a", encoding="utf-8") as f:
+            f.write(body + "\n")
+    except Exception:
+        pass
+
+def setup_file_logging(log_file: str | Path = None, sink=None) -> None:
+    """Wrap builtins.print to log to file and optionally route to a UI sink."""
+    global _ui_sink
+    if log_file:
+        from . import config
+        config.current_log_file = str(log_file)
+    if sink is not None:
+        _ui_sink = sink if callable(sink) else None
+
+    def unified_print(*args, **kwargs):
+        sep = kwargs.pop("sep", " ")
+        kwargs.pop("end", None)
+        kwargs.pop("file", None)
+        kwargs.pop("flush", None)
+
+        rendered_items = []
+        plain_parts = []
+        for arg in args:
+            if isinstance(arg, str):
+                s = arg
+                for k, v in kwargs.items():
+                    val = re.sub(r"(?<!\\)\[", "\\\\[", str(v))
+                    val = re.sub(r"(?<!\\)]", "]", str(val))
+                    s = s.replace(f"${k}", val)
+                rendered_items.append(s)
+                plain_parts.append(strip_markup(s))
+            else:
+                rendered_items.append(arg)
+                plain_parts.append(render_to_plain_text(arg))
+
+        if _ui_sink:
+            _ui_sink(rendered_items)
+        else:
+            _original_print(*rendered_items, sep=sep)
+
+        full_text = sep.join(plain_parts)
+        if full_text.strip():
+            from . import config
+            log_to_file(full_text, config.current_log_file)
+
+    builtins.print = unified_print
 
 async def compress_pdf(input_path: str):
     """Compresses a PDF file using PyMuPDF."""

@@ -6,6 +6,7 @@ import sys
 import configargparse
 
 from .config import DEFAULT_USER_DATA_DIR, load_config
+from .utils import setup_file_logging
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -55,6 +56,8 @@ async def main_async():
     parser.add_argument("--user-data-dir", default=None,
                         help=f"Directory for browser session data (default: read from config or USER_DATA_DIR env var or '{DEFAULT_USER_DATA_DIR}')")
     parser.add_argument("--headless", action="store_true", default=None, help="Run browser in headless mode.")
+    parser.add_argument("--log-file", default=None,
+                        help="Path to log file (default: scraper.log).")
     parser.add_argument("--delay", type=float, default=3.0,
                         help="Time in seconds to wait before page actions/downloads.")
     parser.add_argument("--timeout", type=int, default=30,
@@ -88,6 +91,9 @@ async def main_async():
     # Sync parsed args back into config.settings
     settings.update({k: v for k, v in vars(args).items() if v is not None})
 
+    log_file = settings.get("log_file", "scraper.log")
+    setup_file_logging(log_file)
+
     # Selective task overrides from command line
     tasks = ["entries", "profile", "tags", "userpics", "vgifts", "memories", "photos"]
     cli_flags = [f"--{task}" for task in tasks]
@@ -116,6 +122,7 @@ async def main_async():
 
 
 def main():
+    setup_file_logging()
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:
