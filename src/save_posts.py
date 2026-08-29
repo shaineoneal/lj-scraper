@@ -396,7 +396,7 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay
             except Exception as err:
                 print(f"Error processing post {post_url}: {err}")
                 results["failed_urls"].append(post_url)
-            break  # Skip to next post since this one is already processed
+            continue
         try:
             # Instantiate the LJPost helper
             post = LJPost(page, post_url)
