@@ -249,7 +249,7 @@ class LJPost:
 
     async def _expand_comments(self) -> None:
         """Expands all comments by clicking 'See More' buttons."""
-        more_btn = self.page.locator('.b-leaf-seemore-more, .b-leaf-actions-expandchilds, .b-leaf-collapsed .b-leaf-actions-expand')
+        more_btn = self.page.locator('.b-leaf-seemore-more, .b-leaf-collapsed .b-leaf-actions-expand')
         while await more_btn.count() > 0:
             await self.page.wait_for_load_state("domcontentloaded", timeout=45000)
             curr_button = more_btn.first
@@ -268,7 +268,7 @@ class LJPost:
             update_status(f"Loading post: {self.url} ({index}/{int(self.page_count)})")
         delay = delay_s * 1000
         target_url = f"{self.url}?s2id=46580551" + (f"&page={index}" if index > 1 else "")
-        await self.page.goto(target_url, wait_until="networkidle", timeout=60000)
+        await self.page.goto(target_url)
         await self.page.wait_for_timeout(delay)
 
         body = await self.page.locator("body").inner_html()
@@ -280,6 +280,7 @@ class LJPost:
         if index == 1:
             self.page_count = await self.page.locator("li.b-pager-page").count() / 2.0 or 1
 
+        update_status(f"Expanding comments for post: {self.url} ({index}/{int(self.page_count)})")
         await self._expand_comments()
         await self.page.wait_for_timeout(delay)
 
