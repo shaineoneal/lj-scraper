@@ -349,6 +349,36 @@ class LJPost:
         return save_path
 
 
+async def _process_single_post(page: Page, post_url: str, output_path: Path, delay: float) -> None:
+    """Loads, extracts, renders, and saves a single post."""
+    post = LJPost(page, post_url)
+    jitter = delay * random.uniform(0.5, 1.5)
+
+    await post.load(delay_s=jitter)
+    await post.fetch_post_html()
+    await post.append_comments()
+
+    if "page=" in post_url:
+        print(f"    Warning: Post URL contains 'page=' parameter. Only that page will be saved.")
+        page_num = re.search(r"page=(\d+)", post_url)
+        await post.save_to_file(output_path, filename_index=int(page_num.group(1)) if page_num else None)
+        return
+
+    if post.page_count < 5:
+        if post.page_count > 1:
+            for page_num in range(2, int(post.page_count) + 1):
+                await post.load(delay_s=jitter, index=page_num)
+                await post.append_comments()
+        await post.save_to_file(output_path)
+    else:
+        await post.save_to_file(output_path, filename_index=1)
+        for page_num in range(2, int(post.page_count) + 1):
+            post.comments = []  # Reset comments for each page
+            await post.load(delay_s=jitter, index=page_num)
+            await post.append_comments()
+            await post.save_to_file(output_path, filename_index=page_num)
+
+
 async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay: float = 0.0) -> dict:
     """
     Scrapes and archives a list of LiveJournal posts to disk as HTML documents.
@@ -373,59 +403,39 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay
         "total": len(posts)
     }
 
-    update_status("Saving {len(posts)} post(s)")
+    initial_failed = []
+
+    update_status(f"Saving {len(posts)} post(s)")
     for idx, post_url in enumerate(posts, start=1):
-        update_status("Saving post(s)...")
+        update_status(f"Saving post(s)... ({idx}/{len(posts)})")
         print(f"[{idx}/{len(posts)}] Scraping post: {post_url}")
 
-        if "page=" in post_url:
-            print(f"    Warning: Post URL contains 'page=' parameter. Only that page will be saved.")
-            # Instantiate the LJPost helper
-            post = LJPost(page, post_url)
-
-            # Load the post page
-            jitter = delay * random.uniform(0.5, 1.5)
-            try:
-                await post.load(delay_s=jitter)
-                await post.fetch_post_html()
-                await post.append_comments()
-
-                page_num = re.search(r"page=(\d+)", post_url)
-                await post.save_to_file(output_path, filename_index=int(page_num.group(1)) if page_num else None)
-                results["success_count"] += 1
-            except Exception as err:
-                print(f"Error processing post {post_url}: {err}")
-                results["failed_urls"].append(post_url)
-            continue
         try:
-            # Instantiate the LJPost helper
-            post = LJPost(page, post_url)
-
-            # Load the post page
-
-            jitter = delay * random.uniform(0.5, 1.5)
-            await post.load(delay_s=jitter)
-            await post.fetch_post_html()
-            await post.append_comments()
-
-            if post.page_count < 5:
-                if post.page_count > 1:
-                    for page_num in range(2, int(post.page_count) + 1):
-                        await post.load(delay_s=jitter, index=page_num)
-                        await post.append_comments()
-                await post.save_to_file(output_path)
-            else:
-                await post.save_to_file(output_path, filename_index=1)
-                for page_num in range(2, int(post.page_count) + 1):
-                    post.comments = []  # Reset comments for each page
-                    await post.load(delay_s=jitter, index=page_num)
-                    await post.append_comments()
-                    await post.save_to_file(output_path, filename_index=page_num)
+            await _process_single_post(page, post_url, output_path, delay)
             results["success_count"] += 1
-
         except Exception as err:
             print(f"Error processing post {post_url}: {err}")
-            results["failed_urls"].append(post_url)
+            initial_failed.append(post_url)
+
+    # Retry pass for failed posts
+    if initial_failed:
+        print("\n[bold $text-warning]=== Retrying Failed Posts ===[/bold $text-warning]\n")
+        retry_delay = delay * 1.5 if delay > 0 else 2.0
+        for idx, post_url in enumerate(initial_failed, start=1):
+            update_status(f"Retrying failed post: {post_url} ({idx}/{len(initial_failed)})")
+            print(f"    [bold $text-warning]↻ Retrying post ({idx}/{len(initial_failed)}): {post_url}...[/bold $text-warning]")
+            try:
+                await _process_single_post(page, post_url, output_path, retry_delay)
+                results["success_count"] += 1
+                print(f"    [bold $text-success]✓ Retry successful for {post_url}![/bold $text-success]")
+            except Exception as err:
+                print(f"    [bold $text-error]✗ Retry failed again for {post_url}: {err}[/bold $text-error]")
+                results["failed_urls"].append(post_url)
+
+    if results["failed_urls"]:
+        print(f"\n[bold $text-error]Failed to save {len(results['failed_urls'])} post(s) after retry:[/bold $text-error]")
+        for url in results["failed_urls"]:
+            print(f"  - {url}")
 
     update_status("")
     return results
@@ -435,7 +445,10 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay
 # CLI RUNNER ENTRY POINT
 # ==============================================================================
 
-async def main_async(target, settings):
+async def main_async(target=None, settings=None):
+    settings = settings or {}
+    target = target or (sys.argv[1] if len(sys.argv) > 1 else "")
+
     update_status("Initializing...")
 
     posts = []
@@ -492,7 +505,9 @@ async def main_async(target, settings):
         try:
             page = context.pages[0] if context.pages else await context.new_page()
             results = await save_posts(page, posts, output_dir, delay=settings.get("delay", 5.0))
-            print(f"\n[bold $success]Completed! Saved {results['success_count']} posts. Failed: {len(results['failed_urls'])}[/bold $success]")
+            success_count = results['success_count']
+            failed_count = len(results['failed_urls'])
+            print(f"\n[bold]Saved {success_count} posts. Failed: {failed_count}[/bold]")
         finally:
             await context.close()
 
