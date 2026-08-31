@@ -577,7 +577,11 @@ class LiveJournalScraperApp(App):
         self._clear_log()
         self.set_status("Running Login Flow...")
         try:
-            await run_login_flow(self.query_one("#extras-user-data-dir", Input).value.strip() or "user_profile")
+            if self.query_one("#sidebar", TabbedContent).active == "tab-extras":
+                await run_login_flow(self.query_one("#extras-user-data-dir", Input).value.strip() or "user_profile")
+            else:
+                await run_login_flow(self.query_one("#posts-user-data-dir", Input).value.strip() or "user_profile")
+            #if we are on extras tab, use extras-user-data-dir, else use posts-user-data-dir
         except Exception as e:
             print(f"[bold red]Login flow failed: {e}[/bold red]\n")
         finally:
