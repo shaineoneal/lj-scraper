@@ -75,11 +75,13 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
     raise Exception("Could not launch any browser. Please install Chrome/Chromium or run 'playwright install-deps'.")
 
 async def run_login_flow(user_data_dir: str):
-    """Launches browser to let the user log in (headed or headlessly via username/password)."""
+    """Launches browser to let the user log in and automatically saves/closes upon successful login."""
+    from .utils import get_logged_in
 
     async with async_playwright() as p:
         print(Panel.fit(
-            "A browser window has opened. Please log in to your LiveJournal account and then close the browser to save your session data for future scraping runs.\n\n"
+            "A browser window has opened. Please log in to your LiveJournal account.\n\n"
+            "Once logged in, the window will automatically close and save your session data (or you can close it manually).\n\n"
             f"[dim]Session data will be saved to:[/dim] [bold $success]{Path(user_data_dir).resolve()}[/bold $success]\n"
             f"[dim]If you want to use a different directory for session data, set the USER_DATA_DIR environment variable or use the --user-data-dir flag when running the script.[/dim]",
             title="[bold blue]Login Flow[/bold blue]\n\n",
@@ -95,15 +97,49 @@ async def run_login_flow(user_data_dir: str):
         )
         page = context.pages[0] if context.pages else await context.new_page()
         await page.goto("https://www.livejournal.com/login.bml")
-            
-        # Use an event listener to detect when the context is closed
+
+        # Track browser window closure
         closed_event = asyncio.Event()
         context.on("close", lambda ctx: closed_event.set())
-
-        # Also register a handler on browser disconnect if available
         if context.browser:
             context.browser.on("disconnected", lambda b: closed_event.set())
 
-        # Wait until closed
-        await closed_event.wait()
-        print("[bold $success]Browser closed. Session data saved successfully![/bold $success]")
+        logged_in_user = None
+
+        # Poll for successful authentication until logged in or browser closed
+        while not closed_event.is_set():
+            try:
+                cookies = await context.cookies("https://www.livejournal.com")
+                has_session = any(c["name"] in ("ljloggedin", "ljmastersession") and c["value"] for c in cookies)
+
+                for p_active in context.pages:
+                    if not p_active.is_closed():
+                        user = await get_logged_in(p_active)
+                        if user:
+                            logged_in_user = user
+                            break
+
+                if logged_in_user or has_session:
+                    # Give cookies & storage a moment to finish syncing to disk
+                    await asyncio.sleep(1.5)
+                    break
+            except Exception:
+                pass
+
+            # Wait 1s between polling iterations or wake up if window is closed
+            try:
+                await asyncio.wait_for(asyncio.shield(closed_event.wait()), timeout=1.0)
+            except asyncio.TimeoutError:
+                pass
+
+        # Close the context automatically if it's still open
+        if not closed_event.is_set():
+            try:
+                await context.close()
+            except Exception:
+                pass
+
+        if logged_in_user:
+            print(f"[bold $success]✓ Logged in as {logged_in_user}! Session data saved successfully.[/bold $success]")
+        else:
+            print("[bold $success]Browser closed. Session data saved successfully![/bold $success]")
