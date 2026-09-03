@@ -18,7 +18,8 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
             user_data_dir=user_data_dir,
             headless=headless,
             args=args,
-            ignore_https_errors=True
+            ignore_https_errors=True,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         )
         return context
     except Exception as e:
@@ -36,7 +37,8 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
             headless=headless,
             channel="chrome",
             args=args,
-            ignore_https_errors=True
+            ignore_https_errors=True,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         )
         return context
     except Exception:
@@ -50,7 +52,8 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
                 headless=headless,
                 channel="chromium",
                 args=args,
-                ignore_https_errors=True
+                ignore_https_errors=True,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             )
             return context
         except Exception:
