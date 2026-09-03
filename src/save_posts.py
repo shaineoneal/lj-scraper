@@ -272,8 +272,8 @@ class LJPost:
         await self.page.wait_for_timeout(delay)
 
         body = await self.page.locator("body").inner_html()
-        comment_count = await self.page.locator('.js-amount').first.inner_html() if await self.page.locator(
-            '.js-amount').first.count() > 0 else None
+        comment_count = await self.page.locator('.js-amount').first.text_content() if await self.page.locator(
+            '.js-amount').count() > 0 else None
         if "This page is not available" in body or not comment_count:
             raise ValueError(f"Post not available: {self.url}")
 
