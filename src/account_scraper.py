@@ -37,7 +37,7 @@ class LiveJournalAccount:
         self.timeout = settings.get("timeout", 30) if not self.is_retrying else settings.get("timeout", 30) * 2.25
         self.timeout_ms = int(self.timeout * 1000)
         self.status = None
-        self.mem_count = None
+        self.acct_mem_count = None
 
 
         clean_username = username.replace("_", "-")
@@ -75,8 +75,7 @@ class LiveJournalAccount:
                 update_status(f"Navigating to {url} (Attempt {attempt + 1}/{max_attempts})...")
 
                 page = await self.context.new_page()
-                resp = await page.goto(url, wait_until="domcontentloaded")
-                await page.wait_for_timeout(2000)
+                resp = await page.goto(url, wait_until="load")
 
                 if resp and resp.status != 200:
                     if resp.status == 404:
@@ -136,6 +135,8 @@ class LiveJournalAccount:
 
         # Determine what to save for this task
         task_option = self.format_options.get(task_name)
+        if task_name == "memory_index":
+            task_option = self.format_options.get("memories")  # Use memories option for memory_index
         if task_option is False or task_option is None:
             print(f"    [bold $warning]⚠[/bold $warning] [dim]Skipping saving assets for {task_name} (disabled).[/dim]")
             return
@@ -162,9 +163,7 @@ class LiveJournalAccount:
         except Exception as e:
             print(f"    [bold red]✗[/bold red] [dim]Error saving assets for {task_name}:[/dim] {e}")
 
-        if task_name == "memory_index":
-            print(f"        [bold $success]✓[/bold $success] [dim]Saved assets for:[/dim] {task_name} (Memory Index only, not full memories)")
-        if task_name != "photos" and task_name != "memory_index":
+        if task_name != "photos":
             print(f"    [bold $success]✓[/bold $success] [dim]Saved assets for:[/dim] {task_name}")
 
     async def scrape_entries(self) -> dict:
@@ -180,10 +179,15 @@ class LiveJournalAccount:
     async def scrape_profile(self) -> dict:
         async def save(page, res):
             filename = f"{self.username} - Profile"
-            await self._save_page_assets(page, "profile", filename, res)
             
-            memory_count = await page.locator('.b-profile-stat-memcount > .b-profile-stat-value').all_inner_texts()
-            res["mem_count"] = memory_count[0].replace(',', '') if memory_count else "0"
+            stat_loc = page.locator('.b-profile-stat-memcount > .b-profile-stat-value').first
+            if await stat_loc.count() > 0:
+                memory_count = await stat_loc.text_content()
+                self.acct_mem_count = int(memory_count.replace(',', '')) if memory_count else 0
+            else:
+                self.acct_mem_count = 0
+
+            await self._save_page_assets(page, "profile", filename, res)
 
         return await self._scrape_task("profile", "profile", save_fn=save)
 
@@ -208,9 +212,17 @@ class LiveJournalAccount:
 
         return await self._scrape_task("vgifts", "virtual gifts", check_fn=check_for_vgifts, save_fn=save)
 
+    async def scrape_mem_index(self):
+        async def save(page, res):
+            filename = f"{self.username} - Memory Index"
+            await self._save_page_assets(page, "memory_index", filename, res)
+
+        update_status("Navigating to Memory Index...")
+        await self._scrape_task("memory_index", "memory index", save_fn=save)
+
     async def scrape_memories(self) -> dict:
         async def check(page, res) -> bool:
-            if self.mem_count is None:
+            if self.acct_mem_count == 0 or self.acct_mem_count is None:
                 mems = await check_for_memories(page, timeout=(self.timeout * 1000))
                 if mems:
                     print(
@@ -226,24 +238,18 @@ class LiveJournalAccount:
 
         async def save(page, res):
             filename = f"{self.username} - Memories"
-            await scroll_with_keyboard(page, self.mem_count if self.mem_count else settings.get('max_dl_memories', 500), settings.get('max_dl_memories', 500))
+            max_dl = int(settings.get('max_dl_memories', 500))
+            if self.acct_mem_count and self.acct_mem_count > max_dl:
+                print(
+                    f"    [bold $warning]⚠[/bold $warning] [dim]Memory count ({self.acct_mem_count}) exceeds max_memories, collecting the index and the first {max_dl} memories..."
+                )
+                await self.scrape_mem_index()
+
+            await scroll_with_keyboard(page, self.acct_mem_count if self.acct_mem_count and self.acct_mem_count < max_dl else max_dl)
             await page.wait_for_timeout(5000)
             await self._save_page_assets(page, "memories", filename, res)
 
-        if self.mem_count == 0:
-            print(f"    [bold $warning]⚠[/bold $warning] [dim]No memories found for {self.username}, skipping.[/dim]")
-            return {"success": False, "error": False}
-
         return await self._scrape_task("memories", "memories", check_fn=check, save_fn=save)
-
-    async def scrape_mem_index(self):
-        async def save(page, res):
-            filename = f"{self.username} - Memory Index"
-            await self._save_page_assets(page, "memory_index", filename, res)
-
-        update_status("Navigating to Memory Index...")
-        await self._scrape_task("memory_index", "memory index", save_fn=save)
-
 
     async def scrape_photos(self) -> dict:
         async def check(page, timeout) -> bool:
@@ -339,7 +345,6 @@ class LiveJournalAccount:
         if self.format_options.get("profile"):
             res = await self.scrape_profile()
             self.results["profile"] = "success" if res['success'] else "failed"
-            self.results["mem_count"] = res.get("mem_count", "0")
 
         if self.format_options.get("tags"):
             res = await self.scrape_tags()
@@ -354,7 +359,6 @@ class LiveJournalAccount:
             self.results["vgifts"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
 
         if self.format_options.get("memories"):
-            self.mem_count = int(self.results.get("mem_count", 0)) if self.results["profile"] != "skipped" else 0
             res = await self.scrape_memories()
             self.results["memories"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
 
@@ -384,7 +388,6 @@ class LiveJournalAccount:
                 print(f"    [bold $text-warning]↻ Retrying {task_name} for {self.username}...[/bold $text-warning]")
                 
                 if task_name == "memories":
-                    self.mem_count = int(self.results.get("mem_count", 0)) if self.results["profile"] != "skipped" else 0
                     res = await self.scrape_memories()
                 else:
                     res = await task_method()

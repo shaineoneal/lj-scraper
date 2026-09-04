@@ -9,6 +9,7 @@ from .config import (
     DEFAULT_USER_DATA_DIR,
     update_status,
 )
+from .utils import get_logged_in
 
 # Add the parent directory of this file to the Python path if running as a script
 if __name__ == "__main__" and not __package__:
@@ -234,6 +235,8 @@ def parse_url_target(url: str) -> tuple[str, str]:
 
 
 class LJPost:
+    has_checked_login = False
+    logged_in_user = None
 
     def __init__(self, page: Page, url: str):
         self.comments: list[str] = []
@@ -249,9 +252,13 @@ class LJPost:
 
     async def _expand_comments(self) -> None:
         """Expands all comments by clicking 'See More' buttons."""
-        more_btn = self.page.locator('.b-leaf-seemore-more, .b-leaf-collapsed .b-leaf-actions-expand')
+        more_btn = self.page.locator('.b-leaf-seemore-more, .b-leaf-collapsed .b-leaf-actions-expand a')
+        try:
+            await self.page.wait_for_selector('.b-leaf-seemore-more, .b-leaf-collapsed .b-leaf-actions-expand a', timeout=5000)
+        except Exception:
+            print("No 'See More' buttons found.")
+            return
         while await more_btn.count() > 0:
-            await self.page.wait_for_load_state("domcontentloaded", timeout=45000)
             curr_button = more_btn.first
             try:
                 await curr_button.click(timeout=7500)
@@ -269,17 +276,32 @@ class LJPost:
         delay = delay_s * 1000
         target_url = f"{self.url}?s2id=46580551" + (f"&page={index}" if index > 1 else "")
         await self.page.goto(target_url)
-        await self.page.wait_for_timeout(delay)
+        await self.page.wait_for_timeout(delay * 2)
+
+        if not LJPost.has_checked_login:
+            LJPost.has_checked_login = True
+            try:
+                LJPost.logged_in_user = await get_logged_in(self.page)
+                if LJPost.logged_in_user:
+                    print(f"    [bold $success]✓[/bold $success] [dim]Logged in as {LJPost.logged_in_user}[/dim]")
+                else:
+                    print("    [bold $warning]⚠[/bold $warning] [dim]Not logged in! Some content may be restricted.[/dim]")
+            except Exception as e:
+                print(f"    [bold $warning]⚠[/bold $warning] [dim]Failed to extract login info:[/dim] {e}")
 
         body = await self.page.locator("body").inner_html()
         comment_count = await self.page.locator('.js-amount').first.text_content() if await self.page.locator(
             '.js-amount').count() > 0 else None
+        if "Comments for this post were disabled" in body:
+            comment_count = 0
+            return
         if "This page is not available" in body or not comment_count:
             raise ValueError(f"Post not available: {self.url}")
 
         if index == 1:
             self.page_count = await self.page.locator("li.b-pager-page").count() / 2.0 or 1
 
+        await self.page.wait_for_timeout(delay)
         update_status(f"Expanding comments for post: {self.url} ({index}/{int(self.page_count)})")
         await self._expand_comments()
         await self.page.wait_for_timeout(delay)
@@ -396,6 +418,7 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
+    LJPost.has_checked_login = False
 
     results = {
         "success_count": 0,

@@ -35,7 +35,7 @@ DEFAULT_SETTINGS = {
     "tab": "extras"
 }
 
-def load_config(path: Path = CONFIG_FILE) -> dict:
+def load_config(path: Path = CONFIG_FILE) -> dict[str, str | int]:
     """Loads configuration from config file.
     If the file doesn't exist, it creates a default template.
     """

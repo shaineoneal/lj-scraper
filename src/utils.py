@@ -183,18 +183,13 @@ async def download_html(page: Page, save_path: str):
     """Downloads the current page HTML content."""
     Path(save_path).write_text(await page.content(), encoding="utf-8")
 
-async def scroll_with_keyboard(page: Page, mem_count: int, max_memories: int):
-    if mem_count > max_memories:
-        print(
-            f"    [bold $warning]⚠[/bold $warning] [dim]Memory count ({mem_count}) exceeds max_memories, collecting the index and the first {max_memories} memories..."
-        )
-
+async def scroll_with_keyboard(page: Page, max_memories: int):
     """Scrolls down using the lazyloader/footer or keyboard to load all dynamic content/entries."""
     no_more_entries = page.locator(".b-lenta-emptiness")
 
     # Cast mem_count to int immediately to prevent bad string/numeric comparisons
     try:
-        target_count = int(mem_count) if mem_count else 0
+        target_count = int(max_memories) if max_memories else 0
     except (ValueError, TypeError):
         target_count = 0
 
@@ -254,7 +249,7 @@ async def scroll_with_keyboard(page: Page, mem_count: int, max_memories: int):
 
         if current_count != entry_count:
             entry_count = current_count
-            loaded_str = f"{current_count}/{target_str}" if mem_count else str(current_count)
+            loaded_str = f"{current_count}/{target_str}" if max_memories else str(current_count)
             update_status(f"Scrolling... [dim]Loaded [/dim][$text-secondary]{loaded_str}[/$text-secondary] [dim]entries[/dim]")
 
 async def check_for_tags(page: Page, timeout: int) -> bool:

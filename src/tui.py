@@ -23,7 +23,7 @@ from textual_fspicker import FileOpen, Filters
 import src.config
 import rich.progress
 
-from .save_posts import main_async
+from .save_posts import LJPost, main_async
 from .browser import run_login_flow, launch_browser_with_fallback
 from .account_scraper import LiveJournalAccount
 from .utils import parse_targets, setup_file_logging
@@ -526,6 +526,7 @@ class LiveJournalScraperApp(App):
         # Similar to run_extras_scraper_async, but for posts. Implementation would go here.
         # Reset the once-per-run login check flag
         LiveJournalAccount.has_checked_login = False
+        LJPost.has_checked_login = False
 
         self.query_one("#results-table", DataTable).display = False
         self.set_status("Starting scraping...")
