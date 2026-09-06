@@ -213,9 +213,9 @@ def parse_url_target(url: str) -> tuple[str, str]:
         path = match.group(2)
         if subdomain not in ("www", "m", "mobile", "classic"):
             filename = path.rstrip("/").split("/")[-1]
-            if not filename.endswith(".html"):
-                filename = f"{filename}.html"
-            return subdomain, filename
+            if filename.endswith(".html"):
+                filename = filename.replace(".html", "")
+            return subdomain, subdomain.replace('_', '-') + '-' + filename
 
     # Check for pattern https://www.livejournal.com/users/username/123.html
     match_users = re.match(r"https?://(?:www\.)?livejournal\.com/users/([^/]+)/(.*)", url, re.IGNORECASE)
@@ -223,14 +223,14 @@ def parse_url_target(url: str) -> tuple[str, str]:
         username = re.sub('-', '_', match_users.group(1))
         path = match_users.group(2)
         filename = path.rstrip("/").split("/")[-1]
-        if not filename.endswith(".html"):
-            filename = f"{filename}.html"
-        return username, filename
+        if filename.endswith(".html"):
+            filename = filename.replace(".html", "")
+        return username, username.replace('_', '-') + '-' + filename
 
     # Fallback
     filename = url.rstrip("/").split("/")[-1]
-    if not filename.endswith(".html"):
-        filename = f"{filename}.html"
+    if filename.endswith(".html"):
+        filename = filename.replace(".html", "")
     return "single_posts", filename
 
 
@@ -242,6 +242,8 @@ class LJPost:
         self.comments: list[str] = []
         self.page: Page = page
         self.url: str = url
+        self.username: str = parse_url_target(url)[0]
+        self.post_filename: str = parse_url_target(url)[1]
         self.title: str = "No Subject"
         self.page_count = 1
         self.post_html = ""
@@ -355,18 +357,17 @@ class LJPost:
         self.post_html = f"{header}{about}{content}\n<br><h3>{comment_count} Comment(s)</h3>"
     async def save_to_file(self, output_dir: Path, filename_index=None) -> Path:
 
-        # Resolve filename
-        username = re.sub('_', '-', output_dir.name)
-        filename = f'{username}-{self.url.split("?")[0].rstrip(".html/").split("/")[-1]}'
+        filename = self.post_filename
         if filename_index is not None:
             filename += f"&page={filename_index}.html"
         else:
             filename += ".html"
 
-        print(f"    Saving post to: {output_dir / filename}")
-        save_path = Path(output_dir) / f"{filename}"
+        print(f"    Saving post to: {output_dir / self.username / filename}")
+        save_path = Path(output_dir)/ self.username / filename
+        save_path.parent.mkdir(parents=True, exist_ok=True)
         with open(save_path, "w", encoding="utf-8") as f:
-            f.write(await self.render_html(username))
+            f.write(await self.render_html(self.username))
 
         return save_path
 
@@ -401,7 +402,7 @@ async def _process_single_post(page: Page, post_url: str, output_path: Path, del
             await post.save_to_file(output_path, filename_index=page_num)
 
 
-async def save_posts(page: Page, posts: list[str], output_dir: Path | str, delay: float = 0.0) -> dict:
+async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: float = 0.0) -> dict:
     """
     Scrapes and archives a list of LiveJournal posts to disk as HTML documents.
     Excel loading is decoupled and handled separately in the caller.
@@ -483,7 +484,7 @@ async def main_async(target=None, settings=None):
             posts = extract_urls_from_excel(target)
             username = posts[0].lstrip('https://').split('.')[0] if posts else "saved_posts"
             dir_name = re.sub('-', '_', username)
-            output_dir = Path("save_posts_output") / dir_name
+            output_dir = output_dir / dir_name
             print(f"[bold $success]Loaded {len(posts)} posts from Excel file: {target} -> Saving under folder: {output_dir}[/bold $success]")
         except Exception as e:
             print(f"[bold red]Error loading Excel file '{target}': {e}[/bold red]")
@@ -495,20 +496,11 @@ async def main_async(target=None, settings=None):
                 line = line.strip()
                 if line.startswith(("http://", "https://")):
                     posts.append(line)
-            # Find common subdomain/username to name output directory
-            if posts:
-                username, _ = parse_url_target(posts[0])
-                output_dir = Path("save_posts_output") / username
-            else:
-                output_dir = Path("save_posts_output") / "saved_posts"
-            print(f"[bold $success]Loaded {len(posts)} posts from text file: {target} -> Saving under folder: {output_dir}[/bold $success]")
         except Exception as e:
             print(f"[bold red]Failed to read input file {target}: {e}[/bold red]")
             sys.exit(1)
     elif target.startswith(("http://", "https://")):
         posts = [target]
-        username, _ = parse_url_target(target)
-        output_dir = Path("save_posts_output") / username
         print(f"[bold $text-success]Saving single post URL: {target} -> Saving under folder: {output_dir}[/bold $text-success]\n")
     else:
         print(f"[bold $text-error]Invalid target '{target}'. Please specify a post URL, a .xlsx file, or a .txt file containing URLs.[/bold $text-error]")
