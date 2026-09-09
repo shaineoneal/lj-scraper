@@ -61,13 +61,7 @@ def load_config(path: Path = CONFIG_FILE) -> dict[str, str | int]:
 USER_DATA_ENV = "USER_DATA_DIR"
 DEFAULT_USER_DATA_DIR = "user_profile"
 
-USERNAME_PATTERN = re.compile(
-    r'((?<=:\/\/)(?!(?:www|community|users))[^\.]+(?=\.livejournal\.com)|'
-    r'(?<=\?user=)[^&]+|'
-    r'(?<=:\/\/community\.livejournal\.com\/)[^\/]+|'
-    r'(?<=livejournal\.com\/users\/)[^\/]+|'
-    r'(?<=livejournal\.com\/community\/)[^\/]+|'
-    r'(?<=:\/\/users\.livejournal\.com\/)[^\/]+)',
+USERNAME_PATTERN = re.compile(r"://(?:(?:community|users)\.|([^/.\s]+)\.)?livejournal\.com(?:(?:/(.*?))?/(\d+)\.html|/users/([^/\s?#]+)|/community/([^/\s?#]+))",
     re.IGNORECASE
 )
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from src.browser import launch_browser_with_fallback
 from .config import (
     DEFAULT_USER_DATA_DIR,
-    update_status,
+    update_status, USERNAME_PATTERN,
 )
 from .utils import get_logged_in
 
@@ -207,25 +207,12 @@ def parse_url_target(url: str) -> tuple[str, str]:
     Parses a LiveJournal post URL to extract (username, post_filename).
     """
     # Check for pattern https://username.livejournal.com/123.html or similar
-    match = re.match(r"https?://([^.]+)\.livejournal\.com/(.*)", url, re.IGNORECASE)
+    match = re.search(USERNAME_PATTERN, url)
     if match:
-        subdomain = re.sub('-', '_', match.group(1))
-        path = match.group(2)
-        if subdomain not in ("www", "m", "mobile", "classic"):
-            filename = path.rstrip("/").split("/")[-1]
-            if filename.endswith(".html"):
-                filename = filename.replace(".html", "")
-            return subdomain, subdomain.replace('_', '-') + '-' + filename
-
-    # Check for pattern https://www.livejournal.com/users/username/123.html
-    match_users = re.match(r"https?://(?:www\.)?livejournal\.com/users/([^/]+)/(.*)", url, re.IGNORECASE)
-    if match_users:
-        username = re.sub('-', '_', match_users.group(1))
-        path = match_users.group(2)
-        filename = path.rstrip("/").split("/")[-1]
-        if filename.endswith(".html"):
-            filename = filename.replace(".html", "")
-        return username, username.replace('_', '-') + '-' + filename
+        username = next(group for group in match.groups() if group is not None)
+        post_id = match.group(3)
+        if post_id:
+            return username, username.replace('_', '-') + '-' + post_id
 
     # Fallback
     filename = url.rstrip("/").split("/")[-1]

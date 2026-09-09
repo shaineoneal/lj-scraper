@@ -177,6 +177,8 @@ async def download_pdf(page: Page, save_path: str) -> bool:
             raise e
     except Exception as e:
         print(f"    [bold $error]Failed to download PDF for {save_path}: {e}[/bold $error]")
+        exception_name = type(e).__name__               #TODO: remove after debugging
+        print(f"Exception Name: {exception_name}")      #TODO: remove after debugging
         raise e
 
 async def download_html(page: Page, save_path: str):
@@ -312,8 +314,10 @@ def parse_targets(target_str: str) -> tuple[list[str], list[str]]:
             else:
                 match = re.search(USERNAME_PATTERN, item)
                 if match:
-                    username = match.group(0).replace("-", "_")
-                    profile_targets.append(username)
+                    username = next((g for g in match.groups() if g), None)
+                    if username:
+                        username = username.replace("-", "_")
+                        profile_targets.append(username)
         else:
             profile_targets.append(item.replace("-", "_"))
 
