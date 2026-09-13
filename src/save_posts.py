@@ -1,6 +1,6 @@
 import asyncio
 import random
-import re
+import regex as re
 import sys
 from pathlib import Path
 
@@ -209,9 +209,12 @@ def parse_url_target(url: str) -> tuple[str, str]:
     # Check for pattern https://username.livejournal.com/123.html or similar
     match = re.search(USERNAME_PATTERN, url)
     if match:
-        username = next(group for group in match.groups() if group is not None)
-        post_id = match.group(3)
+        username = match.group("user").replace('-', '_')
+        post_id = match.group("post_id")
         if post_id:
+            if username.startswith("_") or username.endswith("_"):
+                user_type = match.group("type")
+                return username, user_type + '-' + username.replace('_', '-') + '-' + post_id
             return username, username.replace('_', '-') + '-' + post_id
 
     # Fallback
@@ -229,8 +232,7 @@ class LJPost:
         self.comments: list[str] = []
         self.page: Page = page
         self.url: str = url
-        self.username: str = parse_url_target(url)[0]
-        self.post_filename: str = parse_url_target(url)[1]
+        self.username, self.post_filename = parse_url_target(url)
         self.title: str = "No Subject"
         self.page_count = 1
         self.post_html = ""

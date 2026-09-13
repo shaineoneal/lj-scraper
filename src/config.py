@@ -1,5 +1,5 @@
 import json
-import re
+import regex as re
 from pathlib import Path
 
 from rich.console import Console
@@ -61,7 +61,7 @@ def load_config(path: Path = CONFIG_FILE) -> dict[str, str | int]:
 USER_DATA_ENV = "USER_DATA_DIR"
 DEFAULT_USER_DATA_DIR = "user_profile"
 
-USERNAME_PATTERN = re.compile(r"://(?:(?:community|users)\.|([^/.\s]+)\.)?livejournal\.com(?:(?:/(.*?))?/(\d+)\.html|/users/([^/\s?#]+)|/community/([^/\s?#]+))",
+USERNAME_PATTERN = re.compile(r"://(?:(?P<type>community|users)\.|(?P<user>[^/.\s]+)\.)?livejournal\.com(?:(?:/(?P<user>.*?))?/(?P<post_id>\d+)\.html|/users/(?P<user>[^/\s?#]+)|/community/(?P<user>[^/\s?#]+))",
     re.IGNORECASE
 )
 
