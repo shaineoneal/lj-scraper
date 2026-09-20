@@ -22,11 +22,17 @@ class AuthenticationError(Exception):
     """Custom exception raised when LiveJournal returns a 412 status (auth required)."""
     pass
 
-_ORIGINAL_SUFFIX_RE = re.compile(r"_([^._/]+)(\.[^/?#]+)$")
 
 def to_original_url(img_url: str) -> str:
     """Rewrites any size suffix (e.g. _300/_600/_900) to fetch the _original size, like album scraping."""
-    return _ORIGINAL_SUFFIX_RE.sub(r"_original\2", img_url)
+    base_url, filename = img_url.rsplit("/", 1)
+    filename, extension = filename.split(".")
+    if "_" in filename:
+        filename = filename.rsplit("_", 1)[0] + "_original"
+    else:
+        post_id = base_url.split("/")[-1]
+        filename = f"{post_id}_original"
+    return f"{base_url}/{filename}.{extension}"
 
 def username_from_image_url(img_url: str) -> str:
     """Extracts the LJ username from an image URL (https://<host>/<user>/...) like save_posts does."""
@@ -368,9 +374,8 @@ class LiveJournalPhotoScraper:
                 save_path.write_bytes(img_bytes)
                 return save_path
 
-            except AuthenticationError as e:
-                print(f"[bold $text-error]Authentication Error ({e})[/bold $text-error]")
-                raise e
+            except AuthenticationError:
+                raise
             except Exception as e:
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(2 * (2 ** attempt))

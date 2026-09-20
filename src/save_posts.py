@@ -201,7 +201,6 @@ def extract_urls_from_excel(excel_file_path: Path | str) -> list[str]:
 
     return [cell.value for cell in ws['H'][1:] if cell.value]
 
-
 def parse_url_target(url: str) -> tuple[str, str]:
     """
     Parses a LiveJournal post URL to extract (username, post_filename).
@@ -236,6 +235,7 @@ class LJPost:
         self.title: str = "No Subject"
         self.page_count = 1
         self.post_html = ""
+        self.metadata: dict[str, str] = {}
 
     async def _extract_html(self, selector: str) -> str:
         loc = self.page.locator(selector)
@@ -391,7 +391,14 @@ async def _process_single_post(page: Page, post_url: str, output_path: Path, del
             await post.save_to_file(output_path, filename_index=page_num)
 
 
-async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: float = 0.0) -> dict:
+async def save_posts(
+    page: Page,
+    posts: list[str],
+    output_dir: Path,
+    delay: float = 0.0,
+    browser_context_factory=None,
+    batch_size: int = 1000
+) -> dict:
     """
     Scrapes and archives a list of LiveJournal posts to disk as HTML documents.
     Excel loading is decoupled and handled separately in the caller.
@@ -401,6 +408,8 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
         posts: List of post URLs to scrape.
         output_dir: Target output directory path.
         delay: Seconds to sleep between page fetches to avoid rate limits.
+        browser_context_factory: Optional async callable returning (new_context, new_page) to restart the browser.
+        batch_size: Number of posts to process before restarting the browser (default: 1000).
 
     Returns:
         dict: A summary dictionary (success_count, failed_urls, total).
@@ -413,6 +422,7 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
     results = {
         "success_count": 0,
         "failed_urls": [],
+        "failure_types": [],
         "total": len(posts)
     }
 
@@ -420,6 +430,11 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
 
     update_status(f"Saving {len(posts)} post(s)")
     for idx, post_url in enumerate(posts, start=1):
+        if browser_context_factory and idx > 1 and (idx - 1) % batch_size == 0:
+            print(f"\n[bold $text-primary]Processed {idx - 1} posts. Restarting browser to free memory...[/bold $text-primary]")
+            update_status("Restarting browser context...")
+            _, page = await browser_context_factory()
+
         update_status(f"Saving post(s)... ({idx}/{len(posts)})")
         print(f"[{idx}/{len(posts)}] Scraping post: {post_url}")
 
@@ -427,7 +442,8 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
             await _process_single_post(page, post_url, output_path, delay)
             results["success_count"] += 1
         except Exception as err:
-            print(f"Error processing post {post_url}: {err}")
+            error_type = err.__class__.__name__
+            print(f"Error processing post {post_url}: {error_type}")
             initial_failed.append(post_url)
 
     # Retry pass for failed posts
@@ -435,6 +451,10 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
         print("\n[bold $text-warning]=== Retrying Failed Posts ===[/bold $text-warning]\n")
         retry_delay = delay * 1.5 if delay > 0 else 2.0
         for idx, post_url in enumerate(initial_failed, start=1):
+            if browser_context_factory and idx > 0 and (idx - 1) % batch_size == 0:
+                update_status("Restarting browser context to free memory...")
+                _, page = await browser_context_factory()
+
             update_status(f"Retrying failed post: {post_url} ({idx}/{len(initial_failed)})")
             print(f"    [bold $text-warning]↻ Retrying post ({idx}/{len(initial_failed)}): {post_url}...[/bold $text-warning]")
             try:
@@ -442,8 +462,10 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
                 results["success_count"] += 1
                 print(f"    [bold $text-success]✓ Retry successful for {post_url}![/bold $text-success]")
             except Exception as err:
-                print(f"    [bold $text-error]✗ Retry failed again for {post_url}: {err}[/bold $text-error]")
+                error_type = err.__class__.__name__
+                print(f"    [bold $text-error]✗ Retry failed again for {post_url}: {error_type}[/bold $text-error]")
                 results["failed_urls"].append(post_url)
+                results["failure_types"].append(error_type)
 
     if results["failed_urls"]:
         print(f"\n[bold $text-error]Failed to save {len(results['failed_urls'])} post(s) after retry:[/bold $text-error]")
@@ -453,6 +475,45 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
     update_status("")
     return results
 
+
+class LJInventory:
+    def __init__(self, excel_file_path):
+        self.username = "unknown"
+        self.wb = load_workbook(excel_file_path)
+
+    async def get_posts(self) -> list[str]:
+        """Extracts post URLs from the Excel file."""
+        ws = self.wb.active
+        if ws is None:
+            raise ValueError("No active worksheet found in the Excel file.")
+
+        self.username = re.search(USERNAME_PATTERN, ws['H'][2].value).group("user").replace('-', '_') if ws['H'][1].value else "unknown"
+
+        return [cell.value for cell in ws['H'][1:] if cell.value]
+
+    async def create_posts_tab(self, output_path, statuses: list[str]) -> None:
+        """Creates a new tab in the Excel file with the extracted post URLs and their statuses."""
+        ws = self.wb.active
+        if ws is None:
+            raise ValueError("No active worksheet found in the Excel file.")
+
+        # Create a new sheet for posts
+        if "Posts-01" in self.wb.sheetnames:
+            posts_ws = self.wb["Posts-01"]
+            self.wb.remove(posts_ws)
+        posts_ws = self.wb.create_sheet(title="Posts-01")
+
+        # Write headers
+        posts_ws.append(["Links", "Status"])
+
+        # Extract URLs from column H and write to the new sheet
+        for i, cell in enumerate(ws['H'][1:], start=2):
+            if cell.value:
+                posts_ws.append([cell.value, statuses[i - 2] if i - 2 < len(statuses) else ""])
+
+        print(f'Saving to {output_path}')
+        # Save the workbook
+        self.wb.save(output_path / f"{self.username}-InventorySheet.xlsx")
 
 # ==============================================================================
 # CLI RUNNER ENTRY POINT
@@ -470,14 +531,14 @@ async def main_async(target=None, settings=None):
 
     if target.endswith(".xlsx"):
         try:
-            posts = extract_urls_from_excel(target)
-            username = posts[0].lstrip('https://').split('.')[0] if posts else "saved_posts"
+            inventory = LJInventory(target)
+            posts = await inventory.get_posts()
+            username = inventory.username
             dir_name = re.sub('-', '_', username)
             output_dir = output_dir / dir_name
             print(f"[bold $success]Loaded {len(posts)} posts from Excel file: {target} -> Saving under folder: {output_dir}[/bold $success]")
         except Exception as e:
             print(f"[bold red]Error loading Excel file '{target}': {e}[/bold red]")
-            sys.exit(1)
     elif target.endswith(".txt"):
         try:
             lines = Path(target).read_text(encoding="utf-8").splitlines()
@@ -500,20 +561,54 @@ async def main_async(target=None, settings=None):
 
     update_status("Launching browser context...")
     async with async_playwright() as p:
-        context = await launch_browser_with_fallback(
-            p,
-            user_data_dir=str(settings.get("user_data_dir", DEFAULT_USER_DATA_DIR)),
-            headless=bool(settings.get("headless", True)),
-            args=["--disable-dev-shm-usage"]
-        )
+        user_data_dir = str(settings.get("user_data_dir", DEFAULT_USER_DATA_DIR))
+        headless = bool(settings.get("headless", True))
+        delay = float(settings.get("delay", 5.0))
+        batch_size = int(settings.get("batch_size", 1000))
+
+        active_context = [None]
+
+        async def create_browser_context():
+            if active_context[0]:
+                try:
+                    await active_context[0].close()
+                except Exception:
+                    pass
+                active_context[0] = None
+
+            ctx = await launch_browser_with_fallback(
+                p,
+                user_data_dir=user_data_dir,
+                headless=headless,
+                args=["--disable-dev-shm-usage"]
+            )
+            active_context[0] = ctx
+            pg = ctx.pages[0] if ctx.pages else await ctx.new_page()
+            return ctx, pg
+
+        _, page = await create_browser_context()
         try:
-            page = context.pages[0] if context.pages else await context.new_page()
-            results = await save_posts(page, posts, output_dir, delay=settings.get("delay", 5.0))
+            results = await save_posts(
+                page=page,
+                posts=posts,
+                output_dir=output_dir,
+                delay=delay,
+                browser_context_factory=create_browser_context,
+                batch_size=batch_size
+            )
             success_count = results['success_count']
             failed_count = len(results['failed_urls'])
+            if target.endswith(".xlsx"):
+                output_path = output_dir
+                await inventory.create_posts_tab(output_path, ["Saved" if url not in results['failed_urls'] else f"Failed: {results['failure_types'][i]}" for i, url in enumerate(posts)])
+                print(f"\n[bold]Updated Excel file '{target}' with post statuses.[/bold]")
             print(f"\n[bold]Saved {success_count} posts. Failed: {failed_count}[/bold]")
         finally:
-            await context.close()
+            if active_context[0]:
+                try:
+                    await active_context[0].close()
+                except Exception:
+                    pass
 
 
 def main_cli():
