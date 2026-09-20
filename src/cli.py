@@ -77,12 +77,14 @@ async def main_async():
     parser.add_argument("--max-dl-memories", type=int, nargs="?", const=True, default=500,
                         help="Maximum number of memories to download (default: 500).")
 
-    parser.add_argument("--instant-start", choices=["extras", "posts"],
-                        help="Immediately start scraping the specified tab (extras or posts) without waiting for user input.")
-    parser.add_argument("--tab", choices=["extras", "posts"], default=None,
-                        help="Select which tab to scrape (extras or posts).")
+    parser.add_argument("--instant-start", choices=["extras", "posts", "images"],
+                        help="Immediately start scraping the specified tab (extras, posts, or images) without waiting for user input.")
+    parser.add_argument("--tab", choices=["extras", "posts", "images"], default=None,
+                        help="Select which tab to scrape (extras, posts, or images).")
     parser.add_argument("--posts", action="store_true", default=None,
                         help="Focus the Posts tab on startup.")
+    parser.add_argument("--images", action="store_true", default=None,
+                        help="Focus the Images tab on startup.")
 
     try:
         args, unknown = parser.parse_known_args()
@@ -97,6 +99,8 @@ async def main_async():
 
     if settings.get("posts") or settings.get("instant_start") == "posts":
         settings["tab"] = "posts"
+    if settings.get("images") or settings.get("instant_start") == "images":
+        settings["tab"] = "images"
 
     log_file = settings.get("log_file", "scraper.log")
     setup_file_logging(log_file)
