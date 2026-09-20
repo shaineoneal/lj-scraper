@@ -1,6 +1,6 @@
 import builtins
 import os
-import re
+import regex as re
 import sys
 from datetime import datetime
 from io import StringIO
@@ -296,21 +296,28 @@ async def check_for_albums(page: Page, timeout: int) -> bool:
     except (PlaywrightError, TimeoutError):
         return False
 
-def parse_targets(target_str: str) -> tuple[list[str], list[str]]:
-    """Parses a target string (URL, username, or file) and returns (profile_targets, album_targets)."""
+_IMAGE_EXT_RE = re.compile(r"\.(jpe?g|png|gif|webp|bmp|avif)(\?.*)?$", re.IGNORECASE)
+_LJ_IMAGE_HOSTS = ("ic.pics.livejournal.com", "pics.livejournal.com", "l-files.livejournal.com", "l-userpic.livejournal.com")
+
+def parse_targets(target_str: str) -> tuple[list[str], list[str], list[str]]:
+    """Parses a target string (URL, username, or file) and returns (profile_targets, album_targets, image_urls)."""
     if not target_str:
-        return [], []
+        return [], [], []
 
     profile_targets = []
     album_targets = []
+    image_urls = []
 
     def process_item(item: str):
         item = item.strip()
         if not item:
             return
         if item.startswith(("http://", "https://")):
-            if "livejournal.com" in item and "/photo" in item and "/album" in item:
+            lower = item.lower()
+            if "livejournal.com" in lower and "/photo" in lower and "/album" in lower:
                 album_targets.append(item)
+            elif any(h in lower for h in _LJ_IMAGE_HOSTS) or _IMAGE_EXT_RE.search(lower):
+                image_urls.append(item)
             else:
                 match = re.search(USERNAME_PATTERN, item)
                 if match:
@@ -334,8 +341,9 @@ def parse_targets(target_str: str) -> tuple[list[str], list[str]]:
     # De-duplicate while preserving order
     unique_profiles = list(dict.fromkeys(profile_targets))
     unique_albums = list(dict.fromkeys(album_targets))
+    unique_images = list(dict.fromkeys(image_urls))
 
-    return unique_profiles, unique_albums
+    return unique_profiles, unique_albums, unique_images
 
 def print_summary_table(all_users: list, elapsed_time: float):
     """Renders a beautiful Rich table summarizing the batch run."""
@@ -400,4 +408,17 @@ async def get_logged_in(page) -> str:
             return user if user else ""
     except Exception:
         return ""
+
+if __name__ == "__main__":
+    cases = [
+        ("https://ic.pics.livejournal.com/user/123/abc_original.jpg", ([], [], ["https://ic.pics.livejournal.com/user/123/abc_original.jpg"])),
+        ("https://username.livejournal.com/12345.html", (["username"], [], [])),
+        ("https://username.livejournal.com/photo/album/1234", ([], ["https://username.livejournal.com/photo/album/1234"], [])),
+        ("https://l-userpic.livejournal.com/123/456.png?x=1", ([], [], ["https://l-userpic.livejournal.com/123/456.png?x=1"])),
+        ("https://pics.livejournal.com/user/123/abc_original.jpg", ([], [], ["https://pics.livejournal.com/user/123/abc_original.jpg"])),
+        ("https://pics.livejournal.com/user/pic/000123456", ([], [], ["https://pics.livejournal.com/user/pic/000123456"])),
+    ]
+    for target, expected in cases:
+        assert parse_targets(target) == expected, f"{target}: {parse_targets(target)} != {expected}"
+    print("parse_targets self-check OK")
 

@@ -1,5 +1,7 @@
 import asyncio
 import csv
+import random
+import re
 from pathlib import Path
 
 from playwright.async_api import Error as PlaywrightError
@@ -19,6 +21,39 @@ from .config import (
 class AuthenticationError(Exception):
     """Custom exception raised when LiveJournal returns a 412 status (auth required)."""
     pass
+
+_ORIGINAL_SUFFIX_RE = re.compile(r"_([^._/]+)(\.[^/?#]+)$")
+
+def to_original_url(img_url: str) -> str:
+    """Rewrites any size suffix (e.g. _300/_600/_900) to fetch the _original size, like album scraping."""
+    return _ORIGINAL_SUFFIX_RE.sub(r"_original\2", img_url)
+
+def username_from_image_url(img_url: str) -> str:
+    """Extracts the LJ username from an image URL (https://<host>/<user>/...) like save_posts does."""
+    host = img_url.split("//", 1)[-1].split("/", 1)[0].lower()
+    if "livejournal.com" not in host:
+        return "unknown"
+    user = img_url.split("/", 4)[3] if len(img_url.split("/")) > 3 else ""
+    return user.replace("-", "_") if user else "unknown"
+
+_CONTENT_TYPE_EXT = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/bmp": ".bmp",
+    "image/avif": ".avif",
+    "image/x-icon": ".ico",
+}
+
+def _with_extension(save_path: Path, resp) -> Path:
+    """Appends a content-type-based extension to files saved without one."""
+    if save_path.suffix:
+        return save_path
+    ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+    return save_path.with_suffix(_CONTENT_TYPE_EXT.get(ctype, ".jpg"))
+
+_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
 class LiveJournalPhotoScraper:
     def __init__(self, context, settings):
@@ -234,6 +269,83 @@ class LiveJournalPhotoScraper:
 
         return stats
 
+    async def download_images(self, urls: list[str], output_dir=None, relaunch=None) -> dict:
+        """Downloads a list of image URLs, grouped under output_dir/<username>/. 
+        Username is taken from the URL path (e.g. ic.pics.livejournal.com/<user>/...) like save_posts does.
+        Downloads go through a cookie-free context to dodge user-based throttling, falling back to the
+        logged-in context for restricted (412) images. If relaunch is provided (async callable returning
+        a fresh context), the browser is closed and re-opened every 100 images."""
+        if not urls:
+            return {"downloaded": 0, "failed": 0, "total": 0, "dir": None}
+
+        base = Path(output_dir) if output_dir else Path("output_pics")
+        base.mkdir(parents=True, exist_ok=True)
+
+        stats = {"downloaded": 0, "failed": 0, "total": len(urls), "dir": base}
+        page = await self.context.new_page()
+        anon = await self.context.browser.new_context(user_agent=_USER_AGENT, ignore_https_errors=True) if self.context.browser else None
+        delay = float(self.settings.get("delay", 3.0))
+
+        async def save(request_api, img_url, name_via):
+            img_url = to_original_url(img_url)
+            username = username_from_image_url(img_url)
+            out = base / username
+            out.mkdir(parents=True, exist_ok=True)
+            filename = Path(img_url.split("?")[0]).name or f"image_{name_via}.jpg"
+            saved = await self._fetch_and_save_image(request_api, img_url, out / filename)
+            return saved, username, filename
+
+        async def save_or_fail(request_api, img_url, name_via, label=""):
+            saved, username, filename = await save(request_api, img_url, name_via)
+            if saved:
+                stats["downloaded"] += 1
+                print(f"    [$text-success]✓[/$text-success] [dim]Saved{label}:[/dim] {username}/{saved.name}")
+            else:
+                stats["failed"] += 1
+
+        def record_fail(img_url, e=None):
+            stats["failed"] += 1
+            suffix = f": {e}" if e else ""
+            print(f"[bold $text-error]Failed to download {img_url}{suffix}[/bold $text-error]")
+
+        try:
+            request_api = anon or page
+            anonymous = anon is not None
+            for index, img_url in enumerate(urls, start=1):
+                if delay:
+                    await asyncio.sleep(random.uniform(0.5, 1.5) * delay)
+                update_status(f"Downloading image {index}/{len(urls)}...")
+                if relaunch and index > 1 and (index - 1) % 100 == 0:
+                    update_status("Re-opening browser...")
+                    await page.close()
+                    await self.context.close()
+                    self.context = await relaunch()
+                    page = await self.context.new_page()
+                    if anonymous:
+                        anon = await self.context.browser.new_context(user_agent=_USER_AGENT, ignore_https_errors=True)
+                        request_api = anon or page
+                try:
+                    await save_or_fail(request_api, img_url, index)
+                except AuthenticationError:
+                    if anonymous:
+                        anonymous = False
+                        request_api = page
+                        try:
+                            await save_or_fail(page, img_url, index, " (restricted)")
+                        except Exception as e:
+                            record_fail(img_url, e)
+                    else:
+                        record_fail(img_url)
+                except Exception as e:
+                    record_fail(img_url, e)
+        finally:
+            await page.close()
+            if anon:
+                await anon.close()
+
+        update_status(f"[$text-success]Downloaded {stats['downloaded']}/{stats['total']} images.[/$text-success]")
+        return stats
+
     async def _fetch_and_save_image(self, page: Page, img_url: str, save_path: Path) -> bool:
         """Handles the HTTP request, retries, and file writing for a single image."""
 
@@ -250,8 +362,9 @@ class LiveJournalPhotoScraper:
                     raise Exception(f"Status code {resp.status}")
 
                 img_bytes = await resp.body()
+                save_path = _with_extension(save_path, resp)
                 save_path.write_bytes(img_bytes)
-                return True
+                return save_path
 
             except AuthenticationError as e:
                 print(f"[bold $text-error]Authentication Error ({e})[/bold $text-error]")
@@ -263,3 +376,34 @@ class LiveJournalPhotoScraper:
                     print(f"[bold $text-error]Failed to download {img_url}: {e}[/bold $text-error]")
 
         return False
+
+if __name__ == "__main__":
+    cases = {
+        "https://ic.pics.livejournal.com/u/1/a_300.jpg": "https://ic.pics.livejournal.com/u/1/a_original.jpg",
+        "https://ic.pics.livejournal.com/u/1/a_600.jpg": "https://ic.pics.livejournal.com/u/1/a_original.jpg",
+        "https://ic.pics.livejournal.com/u/1/a_900.jpg": "https://ic.pics.livejournal.com/u/1/a_original.jpg",
+        "https://ic.pics.livejournal.com/u/1/a_1000.jpg": "https://ic.pics.livejournal.com/u/1/a_original.jpg",
+        "https://ic.pics.livejournal.com/u/1/a_original.jpg": "https://ic.pics.livejournal.com/u/1/a_original.jpg",
+        "https://ic.pics.livejournal.com/u/1/a.jpg": "https://ic.pics.livejournal.com/u/1/a.jpg",
+        "https://ic.pics.livejournal.com/u/1/a_300.PNG": "https://ic.pics.livejournal.com/u/1/a_original.PNG",
+    }
+    for url, expected in cases.items():
+        assert to_original_url(url) == expected, f"{url} -> {to_original_url(url)}"
+
+    user_cases = {
+        "https://ic.pics.livejournal.com/some_user/1/a.jpg": "some_user",
+        "https://ic.pics.livejournal.com/some-user/1/a.jpg": "some_user",
+        "https://l-userpic.livejournal.com/other/2/b.jpg": "other",
+        "https://pics.livejournal.com/someone/3/c.jpg": "someone",
+        "https://example.com/foo/a.jpg": "unknown",
+    }
+    for url, expected in user_cases.items():
+        assert username_from_image_url(url) == expected, f"{url} -> {username_from_image_url(url)}"
+
+    class _Resp:
+        def __init__(self, ctype): self.headers = {"content-type": ctype}
+    assert _with_extension(Path("000123456"), _Resp("image/png")) == Path("000123456.png")
+    assert _with_extension(Path("000123456"), _Resp("image/jpeg; charset=binary")) == Path("000123456.jpg")
+    assert _with_extension(Path("000123456"), _Resp("")) == Path("000123456.jpg")
+    assert _with_extension(Path("abc_original.jpg"), _Resp("image/png")) == Path("abc_original.jpg")
+    print("to_original_url + username_from_image_url + _with_extension self-check OK")
