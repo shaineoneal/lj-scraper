@@ -26,7 +26,7 @@ class AuthenticationError(Exception):
 def to_original_url(img_url: str) -> str:
     """Rewrites any size suffix (e.g. _300/_600/_900) to fetch the _original size, like album scraping."""
     base_url, filename = img_url.rsplit("/", 1)
-    filename, extension = filename.split(".")
+    filename, extension = filename.split(".", 1) if "." in filename else (filename, "")
     if "_" in filename:
         filename = filename.rsplit("_", 1)[0] + "_original"
     else:
