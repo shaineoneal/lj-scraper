@@ -466,7 +466,7 @@ async def main_async(target=None, settings=None):
 
     posts = []
 
-    output_dir = Path("save_posts_output")
+    output_dir = Path("output_posts")
 
     if target.endswith(".xlsx"):
         try:
