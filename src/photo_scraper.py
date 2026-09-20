@@ -33,7 +33,7 @@ def to_original_url(img_url: str) -> str:
         post_id = base_url.split("/")[-1]
         if post_id.isdigit():
             filename = f"{post_id}_original"
-    return f"{base_url}/{filename}{"." if extension else ''}{extension}"
+    return f"{base_url}/{filename}{'.' if extension else ''}{extension}"
 
 def username_from_image_url(img_url: str) -> str:
     """Extracts the LJ username from an image URL (https://<host>/<user>/...) like save_posts does."""
