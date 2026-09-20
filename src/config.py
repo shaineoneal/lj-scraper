@@ -32,7 +32,8 @@ DEFAULT_SETTINGS = {
     "vgifts": "both",
     "memories": "both",
     "photos": "both",
-    "tab": "extras"
+    "tab": "extras",
+    "batch_size": 1000
 }
 
 def load_config(path: Path = CONFIG_FILE) -> dict[str, str | int]:

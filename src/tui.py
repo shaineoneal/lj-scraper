@@ -26,6 +26,7 @@ import rich.progress
 from .save_posts import LJPost, main_async
 from .browser import run_login_flow, launch_browser_with_fallback
 from .account_scraper import LiveJournalAccount
+from .photo_scraper import LiveJournalPhotoScraper
 from .utils import parse_targets, setup_file_logging
 
 os.environ["COLORTERM"] = "truecolor"
@@ -76,7 +77,8 @@ class LiveJournalScraperApp(App):
 
     def _get_current_log_file(self) -> str:
         try:
-            pane = "posts" if self.query_one("#sidebar", TabbedContent).active == "tab-posts" else "extras"
+            active = self.query_one("#sidebar", TabbedContent).active
+            pane = "posts" if active == "tab-posts" else "images" if active == "tab-images" else "extras"
             if val := self.query_one(f"#{pane}-log-file", Input).value.strip():
                 return val
         except Exception:
@@ -204,6 +206,37 @@ class LiveJournalScraperApp(App):
                                     yield Label("Log File Location", id="posts-log-file-label")
                                     yield Rule(line_style="ascii")
                                     yield Input(id="posts-log-file", compact=True, value=self.shared_log_file)
+
+                with TabPane("Images", id="tab-images"):
+                    with VerticalScroll():
+                        with Container(id="images-target-input-container"):
+                            yield Input(placeholder="e.g. https://ic.pics.livejournal.com/... or image_list.txt", id="images-target")
+                            yield Button("🗀", classes="open-file-picker", id="btn-images-files")
+                        with Horizontal(id="images-output-dir-container"):
+                            yield Label("Output Directory")
+                            yield Rule(line_style="ascii")
+                            yield Input(id="images-output-dir", compact=True, placeholder="output_pics")
+
+                        with Collapsible(title="Advanced Options", id="images-adv-options"):
+                            with Vertical(id="images-adv-options-contents"):
+                                with Horizontal(id="images-user-data-dir-container"):
+                                    yield Label("User Data Directory", id="images-user-data-dir-label")
+                                    yield Rule(line_style="ascii")
+                                    yield Input(id="images-user-data-dir", compact=True)
+                                with Horizontal(id="images-delay-container"):
+                                    yield Label("Delay Between Requests (seconds)", id="images-delay-label")
+                                    yield Rule(line_style="ascii")
+                                    yield Input(classes="number", compact=True, type="number", id="images-delay",
+                                                value=self.shared_delay)
+                                with Horizontal(id="images-timeout-container"):
+                                    yield Label("Request Timeout (seconds)", id="images-timeout-label")
+                                    yield Rule(line_style="ascii")
+                                    yield Input(classes="number", compact=True, type="number", id="images-timeout",
+                                                value=str(self.shared_timeout))
+                                with Horizontal(id="images-log-file-container"):
+                                    yield Label("Log File Location", id="images-log-file-label")
+                                    yield Rule(line_style="ascii")
+                                    yield Input(id="images-log-file", compact=True, value=self.shared_log_file)
             with Vertical(id="log-container"):
                 yield Label("EXECUTION LOGS", classes="title")
                 yield RichLog(markup=True, id="log-view")
@@ -219,6 +252,7 @@ class LiveJournalScraperApp(App):
         with Horizontal(id="buttons-row"):
             yield Button("Start Scraping Extras", variant="success", id="btn-extras")
             yield Button("Start Scraping Posts", variant="success", id="btn-posts")
+            yield Button("Start Scraping Images", variant="success", id="btn-images")
             yield Button("Run Login Flow", variant="primary", id="btn-login")
             yield Button("Install Linux Deps", variant="warning", id="btn-deps")
             yield Button("Quit", variant="error", id="btn-quit")
@@ -240,14 +274,24 @@ class LiveJournalScraperApp(App):
         )
         # Repopulate the inputs and selections from the saved initial_settings dict.
         s = self.settings
-        initial_tab = "tab-posts" if s.get("tab") == "posts" else "tab-extras"
+        initial_tab = "tab-posts" if s.get("tab") == "posts" else "tab-images" if s.get("tab") == "images" else "tab-extras"
+        posts_btn = self.query_one("#btn-posts", Button)
+        extras_btn = self.query_one("#btn-extras", Button)
+        images_btn = self.query_one("#btn-images", Button)
         if initial_tab == "tab-posts":
             self.query_one("#sidebar", TabbedContent).active = "tab-posts"
-            self.query_one("#btn-posts", Button).styles.display = "block"
-            self.query_one("#btn-extras", Button).styles.display = "none"
+            posts_btn.styles.display = "block"
+            extras_btn.styles.display = "none"
+            images_btn.styles.display = "none"
+        elif initial_tab == "tab-images":
+            self.query_one("#sidebar", TabbedContent).active = "tab-images"
+            images_btn.styles.display = "block"
+            extras_btn.styles.display = "none"
+            posts_btn.styles.display = "none"
         else:
-            self.query_one("#btn-posts", Button).styles.display = "none"
-            self.query_one("#btn-extras", Button).styles.display = "block"
+            extras_btn.styles.display = "block"
+            posts_btn.styles.display = "none"
+            images_btn.styles.display = "none"
         self.query_one("#extras-target-input-container", Grid).border_title = "Target (Username, URL, or .txt file)"
         self.query_one("#extras-target", Input).value = s.get("target", "")
         self.query_one("#extras-headless-switch", Switch).value = s.get("headless", True)
@@ -260,6 +304,11 @@ class LiveJournalScraperApp(App):
         self.query_one("#posts-headless-switch", Switch).value = s.get("headless", True)
         self.query_one("#posts-user-data-dir", Input).value = s.get("user_data_dir", "user_profile")
 
+        self.query_one('#images-target-input-container', Container).border_title = "Target (Image URLs or .txt file)"
+        self.query_one("#images-target", Input).value = s.get("target", "")
+        self.query_one("#images-user-data-dir", Input).value = s.get("user_data_dir", "user_profile")
+        self.query_one("#images-output-dir", Input).value = s.get("output_dir", "")
+
         self.shared_delay = str(s.get("delay", "3.0"))
         self.shared_timeout = int(float(s.get("timeout", "30.0")))
         self.shared_max_memories = str(s.get("max_memories", "750"))
@@ -268,6 +317,7 @@ class LiveJournalScraperApp(App):
 
         self.query_one("#extras-log-file", Input).value = self.shared_log_file
         self.query_one("#posts-log-file", Input).value = self.shared_log_file
+        self.query_one("#images-log-file", Input).value = self.shared_log_file
 
         try:
             html_list = self.query_one("#html-selection", SelectionList)
@@ -303,6 +353,9 @@ class LiveJournalScraperApp(App):
         if s.get("instant_start") == "posts":
             self.query_one("#sidebar", TabbedContent).active = "tab-posts"
             self.call_after_refresh(lambda: self.query_one("#btn-posts", Button).press())
+        if s.get("instant_start") == "images":
+            self.query_one("#sidebar", TabbedContent).active = "tab-images"
+            self.call_after_refresh(lambda: self.query_one("#btn-images", Button).press())
 
     def on_ready(self) -> None:
         # on_ready() runs after the app is fully initialized and ready to accept user input.
@@ -315,37 +368,56 @@ class LiveJournalScraperApp(App):
             print('')
         if self.query_one("#sidebar", TabbedContent).active == "tab-posts":
             self.query_one("#posts-target", Input).focus()
+        elif self.query_one("#sidebar", TabbedContent).active == "tab-images":
+            self.query_one("#images-target", Input).focus()
         else:
             self.query_one("#extras-target", Input).focus()
 
     @on(TabbedContent.TabActivated, pane='#tab-extras')
     def display_extras_button(self) -> None:
-        posts_btn = self.query_one("#btn-posts", Button)
-        extras_btn = self.query_one("#btn-extras", Button)
-        posts_btn.styles.display = "none"
-        extras_btn.styles.display = "block"
+        self.query_one("#btn-posts", Button).styles.display = "none"
+        self.query_one("#btn-images", Button).styles.display = "none"
+        self.query_one("#btn-extras", Button).styles.display = "block"
         extras_target = self.query_one("#extras-target", Input).value
         posts_target = self.query_one("#posts-target", Input).value
-        if not extras_target and posts_target:
-            self.query_one("#extras-target", Input).value = posts_target
+        images_target = self.query_one("#images-target", Input).value
+        if not extras_target and (posts_target or images_target):
+            self.query_one("#extras-target", Input).value = posts_target or images_target
         posts_log = self.query_one("#posts-log-file", Input).value
-        if posts_log:
-            self.query_one("#extras-log-file", Input).value = posts_log
+        images_log = self.query_one("#images-log-file", Input).value
+        if posts_log or images_log:
+            self.query_one("#extras-log-file", Input).value = posts_log or images_log
 
 
     @on(TabbedContent.TabActivated, pane='#tab-posts')
     def display_posts_button(self) -> None:
-        posts_btn = self.query_one("#btn-posts", Button)
-        extras_btn = self.query_one("#btn-extras", Button)
-        extras_btn.styles.display = "none"
-        posts_btn.styles.display = "block"
+        self.query_one("#btn-extras", Button).styles.display = "none"
+        self.query_one("#btn-images", Button).styles.display = "none"
+        self.query_one("#btn-posts", Button).styles.display = "block"
         posts_target = self.query_one("#posts-target", Input).value
         extras_target = self.query_one("#extras-target", Input).value
-        if not posts_target and extras_target:
-            self.query_one("#posts-target", Input).value = extras_target
+        images_target = self.query_one("#images-target", Input).value
+        if not posts_target and (extras_target or images_target):
+            self.query_one("#posts-target", Input).value = extras_target or images_target
         extras_log = self.query_one("#extras-log-file", Input).value
-        if extras_log:
-            self.query_one("#posts-log-file", Input).value = extras_log
+        images_log = self.query_one("#images-log-file", Input).value
+        if extras_log or images_log:
+            self.query_one("#posts-log-file", Input).value = extras_log or images_log
+
+    @on(TabbedContent.TabActivated, pane='#tab-images')
+    def display_images_button(self) -> None:
+        self.query_one("#btn-extras", Button).styles.display = "none"
+        self.query_one("#btn-posts", Button).styles.display = "none"
+        self.query_one("#btn-images", Button).styles.display = "block"
+        images_target = self.query_one("#images-target", Input).value
+        extras_target = self.query_one("#extras-target", Input).value
+        posts_target = self.query_one("#posts-target", Input).value
+        if not images_target and (extras_target or posts_target):
+            self.query_one("#images-target", Input).value = extras_target or posts_target
+        extras_log = self.query_one("#extras-log-file", Input).value
+        posts_log = self.query_one("#posts-log-file", Input).value
+        if extras_log or posts_log:
+            self.query_one("#images-log-file", Input).value = extras_log or posts_log
 
     def action_graceful_exit(self) -> None:
         # Gracefully exit the app, ensuring any background tasks are completed or cancelled.
@@ -380,10 +452,12 @@ class LiveJournalScraperApp(App):
             "btn-quit": self.exit,
             "btn-extras": self.start_extras_scraping_flow,
             "btn-posts": self.start_posts_scraping_flow,
+            "btn-images": self.start_images_scraping_flow,
             "btn-login": self.start_login_flow,
             "btn-deps": self.start_deps_flow,
             "btn-extras-files": self.open_file_picker,
-            "btn-posts-files": self.open_file_picker
+            "btn-posts-files": self.open_file_picker,
+            "btn-images-files": self.open_file_picker
         }
         action = actions.get(event.button.id)
         if action and inspect.iscoroutinefunction(action):
@@ -403,6 +477,9 @@ class LiveJournalScraperApp(App):
     def start_posts_scraping_flow(self):
         self._start_worker(self.run_posts_scraper_async, "scraper")
 
+    def start_images_scraping_flow(self):
+        self._start_worker(self.run_images_scraper_async, "scraper")
+
     def start_login_flow(self):
         self._start_worker(self.run_login_async, "login")
 
@@ -418,6 +495,8 @@ class LiveJournalScraperApp(App):
                 self.query_one("#extras-target", Input).value = str(opened)
             elif btn_id == "btn-posts-files":
                 self.query_one("#posts-target", Input).value = str(opened)
+            elif btn_id == "btn-images-files":
+                self.query_one("#images-target", Input).value = str(opened)
 
     async def run_extras_scraper_async(self):
         # Reset the once-per-run login check flag
@@ -466,8 +545,8 @@ class LiveJournalScraperApp(App):
             "format_options": format_options
         }
 
-        profile_targets, album_targets = parse_targets(target)
-        if not profile_targets and not album_targets:
+        profile_targets, album_targets, image_urls = parse_targets(target)
+        if not profile_targets and not album_targets and not image_urls:
             print("[$text-warning][b]Error: [/b]Invalid target. Provide URL, username, or .txt file.[/$text-warning]")
             self.on_scraping_finished()
 
@@ -488,6 +567,20 @@ class LiveJournalScraperApp(App):
 
                 context.set_default_timeout(self.shared_timeout * 1000)  # Convert seconds to milliseconds
                 context.set_default_navigation_timeout(self.shared_timeout * 1000)
+
+                if image_urls:
+                    self.set_status(f"Downloading {len(image_urls)} image(s)...")
+                    photo_scraper = LiveJournalPhotoScraper(context, settings)
+                    await photo_scraper.download_images(
+                        image_urls,
+                        relaunch=lambda: launch_browser_with_fallback(
+                            p,
+                            user_data_dir=user_data_dir,
+                            headless=self.query_one("#extras-headless-switch", Switch).value,
+                            args=["--no-sandbox", "--disable-dev-shm-usage"],
+                        ),
+                    )
+                    context = photo_scraper.context
 
                 try:
                     for username in profile_targets:
@@ -562,8 +655,7 @@ class LiveJournalScraperApp(App):
             "headless": self.query_one("#posts-headless-switch", Switch).value,
         }
         try:
-            async with async_playwright() as p:
-                await main_async(target, settings=settings)
+            await main_async(target, settings=settings)
         except Exception as e:
             print(f"\n[bold red]Error: {e}[/bold red]\n")
             import traceback
@@ -574,14 +666,95 @@ class LiveJournalScraperApp(App):
             self.on_scraping_finished()
 
 
+    async def run_images_scraper_async(self):
+        log = self.query_one("#log-view", RichLog)
+        self.query_one("#results-table", DataTable).display = False
+        self.set_status("Starting image downloads...")
+
+        ruler = rich.rule.Rule(title="\n[bold]Downloading Image List[/bold]", style="$text-accent")
+        log.write(ruler, expand=True)
+
+        target = self.query_one("#images-target", Input).value.strip()
+        if not target:
+            print("[$text-error][b]Error:[/b] Target is required![/$text-error]")
+            self.on_scraping_finished()
+            return
+
+        user_data_dir = self.query_one("#images-user-data-dir", Input).value.strip() or "user_profile"
+        os.environ["USER_DATA_DIR"] = user_data_dir
+
+        def parse_num(field_id, default, num_type):
+            try:
+                return num_type(self.query_one(field_id, Input).value.strip())
+            except ValueError:
+                return default
+
+        log_file = self._get_current_log_file()
+        src.config.current_log_file = log_file
+
+        settings = {
+            "user_data_dir": user_data_dir,
+            "log_file": log_file,
+            "delay": parse_num("#images-delay", 3.0, float),
+            "timeout": parse_num("#images-timeout", 30.0, float),
+        }
+        output_dir = self.query_one("#images-output-dir", Input).value.strip()
+
+        _, _, image_urls = parse_targets(target)
+        if not image_urls:
+            print("[$text-warning][b]Error: [/b]No image URLs found. Provide image URLs or a .txt file.[/$text-warning]")
+            self.on_scraping_finished()
+            return
+
+        start_time = asyncio.get_event_loop().time()
+        self.set_status("[$text-primary]Launching browser context...[/$text-primary]")
+        try:
+            async with async_playwright() as p:
+                context = await launch_browser_with_fallback(
+                    p, user_data_dir=user_data_dir, headless=True,
+                    args=["--no-sandbox", "--disable-dev-shm-usage"]
+                )
+                context.set_default_timeout(settings["timeout"] * 1000)
+                context.set_default_navigation_timeout(settings["timeout"] * 1000)
+                try:
+                    photo_scraper = LiveJournalPhotoScraper(context, settings)
+                    await photo_scraper.download_images(
+                        image_urls,
+                        output_dir=output_dir or None,
+                        relaunch=lambda: launch_browser_with_fallback(
+                            p,
+                            user_data_dir=user_data_dir,
+                            headless=True,
+                            args=["--no-sandbox", "--disable-dev-shm-usage"],
+                        ),
+                    )
+                finally:
+                    await context.close()
+
+            elapsed = asyncio.get_event_loop().time() - start_time
+            print(f"\n[$text-success]Done! Total elapsed time: {elapsed:.1f}s[/$text-success]\n")
+        except Exception as e:
+            if "AuthenticationError" in type(e).__name__:
+                print(f"\n[bold $text-error]❌ Authentication Error: {e}[/bold $text-error]\nRun login flow first.\n")
+            else:
+                print(f"\n[bold $text-error]Error: {e}[/bold $text-error]\n")
+                import traceback
+                print(traceback.format_exc())
+        finally:
+            self.on_scraping_finished()
+
+
     async def run_login_async(self):
         self._clear_log()
         self.set_status("Running Login Flow...")
         try:
-            if self.query_one("#sidebar", TabbedContent).active == "tab-extras":
-                await run_login_flow(self.query_one("#extras-user-data-dir", Input).value.strip() or "user_profile")
-            else:
+            active = self.query_one("#sidebar", TabbedContent).active
+            if active == "tab-images":
+                await run_login_flow(self.query_one("#images-user-data-dir", Input).value.strip() or "user_profile")
+            elif active == "tab-posts":
                 await run_login_flow(self.query_one("#posts-user-data-dir", Input).value.strip() or "user_profile")
+            else:
+                await run_login_flow(self.query_one("#extras-user-data-dir", Input).value.strip() or "user_profile")
             #if we are on extras tab, use extras-user-data-dir, else use posts-user-data-dir
         except Exception as e:
             print(f"[bold red]Login flow failed: {e}[/bold red]\n")

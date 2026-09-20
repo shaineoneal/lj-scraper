@@ -324,6 +324,8 @@ class LiveJournalPhotoScraper:
                     if anonymous:
                         anon = await self.context.browser.new_context(user_agent=_USER_AGENT, ignore_https_errors=True)
                         request_api = anon or page
+                    else:
+                        request_api = page
                 try:
                     await save_or_fail(request_api, img_url, index)
                 except AuthenticationError:
