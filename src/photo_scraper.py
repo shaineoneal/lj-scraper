@@ -31,8 +31,8 @@ def to_original_url(img_url: str) -> str:
         filename = filename.rsplit("_", 1)[0] + "_original"
     else:
         post_id = base_url.split("/")[-1]
-        if post_id.isdigit():
-            filename = f"{post_id}_original"
+        if post_id != "pic":
+            filename = f"{post_id}_original" if filename.isdigit()  else f"{post_id}_{filename}" if filename != 't6464' else post_id
     return f"{base_url}/{filename}{'.' if extension else ''}{extension}"
 
 def username_from_image_url(img_url: str) -> str:
