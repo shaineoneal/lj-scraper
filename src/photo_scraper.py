@@ -108,7 +108,7 @@ class LiveJournalPhotoScraper:
                     if await download_pdf(page, str(pdf_path)):
                         print(f"        [$text-success]✓[/$text-success] [dim]Saved PDF:[/dim] {pdf_path}")
 
-                    stats = await self._download_images(page, url, metadata, output_dir)
+                    stats = await self._download_album_images(page, url, metadata, output_dir)
 
                     if stats:
                         #self._print_album_summary(url, stats)
@@ -127,8 +127,91 @@ class LiveJournalPhotoScraper:
         finally:
             await page.close()
 
+    async def download_images(self, urls: list[str], output_dir=None, relaunch=None) -> dict:
+        """Downloads a list of image URLs, grouped under output_dir/<username>/. 
+        Username is taken from the URL path (e.g. ic.pics.livejournal.com/<user>/...) like save_posts does.
+        Downloads go through a cookie-free context to dodge user-based throttling, falling back to the
+        logged-in context for restricted (412) images. If relaunch is provided (async callable returning
+        a fresh context), the browser is closed and re-opened every 100 images."""
+        if not urls:
+            return {"downloaded": 0, "failed": 0, "total": 0, "dir": None}
+
+        base = Path(output_dir) if output_dir else Path("output_pics")
+        base.mkdir(parents=True, exist_ok=True)
+
+        stats = {"downloaded": 0, "failed": 0, "total": len(urls), "dir": base}
+        page = await self.context.new_page()
+        anon = await self.context.browser.new_context(user_agent=_USER_AGENT, ignore_https_errors=True) if self.context.browser else None
+        delay = float(self.settings.get("delay", 3.0))
+
+        async def save(request_api, img_url, fallback_index):
+            if "userpic" in img_url:
+                username = "userpics"
+                filename = Path(img_url.rsplit("/", 1)[0] + "-" + img_url.rsplit("/", 1)[-1]).name
+            else:
+                img_url = to_original_url(img_url)
+                username = username_from_image_url(img_url)
+                filename = Path(img_url.split("?")[0]).name or f"image_{fallback_index}.jpg"
+            out = base / username
+            out.mkdir(parents=True, exist_ok=True)
+            saved = await self._fetch_and_save_image(request_api, img_url, out / filename)
+            return saved, username, filename
+
+        async def save_or_fail(request_api, img_url, fallback_index, label=""):
+            saved, username, filename = await save(request_api, img_url, fallback_index)
+            if saved:
+                stats["downloaded"] += 1
+                print(f"    [$text-success]✓[/$text-success] [dim]Saved{label}:[/dim] {username}/{saved.name}")
+            else:
+                stats["failed"] += 1
+
+        def record_fail(img_url, e=None):
+            stats["failed"] += 1
+            suffix = f": {e}" if e else ""
+            print(f"[bold $text-error]Failed to download {img_url}{suffix}[/bold $text-error]")
+
+        try:
+            request_api = anon or page
+            anonymous = anon is not None
+            for index, img_url in enumerate(urls, start=1):
+                if delay:
+                    await asyncio.sleep(random.uniform(0.5, 1.5) * delay)
+                update_status(f"Downloading image {index}/{len(urls)}...")
+                if relaunch and index > 1 and (index - 1) % 100 == 0:
+                    update_status("Re-opening browser...")
+                    await page.close()
+                    await self.context.close()
+                    self.context = await relaunch()
+                    page = await self.context.new_page()
+                    if anonymous:
+                        anon = await self.context.browser.new_context(user_agent=_USER_AGENT, ignore_https_errors=True)
+                        request_api = anon or page
+                    else:
+                        request_api = page
+                try:
+                    await save_or_fail(request_api, img_url, index)
+                except AuthenticationError:
+                    if anonymous:
+                        anonymous = False
+                        request_api = page
+                        try:
+                            await save_or_fail(page, img_url, index, " (restricted)")
+                        except Exception as e:
+                            record_fail(img_url, e)
+                    else:
+                        record_fail(img_url)
+                except Exception as e:
+                    record_fail(img_url, e)
+        finally:
+            await page.close()
+            if anon:
+                await anon.close()
+
+        update_status(f"[$text-success]Downloaded {stats['downloaded']}/{stats['total']} images.[/$text-success]")
+        return stats
+
     async def _extract_metadata_and_scroll(self, page: Page) -> dict:
-        """Extracts title, description, and image count from the DOM."""
+        """Extracts album title, description, and photo count, then scrolls to load all images."""
         try:
             header = page.locator(SEL_HEADER)
             await expect(header).to_be_visible(timeout=7500)
@@ -203,8 +286,8 @@ class LiveJournalPhotoScraper:
                     retries = 0
                     last_height = new_height
 
-    async def _download_images(self, page: Page, url: str, metadata: dict, output_dir: Path) -> dict:
-        """Extracts src attributes and downloads images with a progress bar."""
+    async def _download_album_images(self, page: Page, url: str, metadata: dict, output_dir: Path) -> dict:
+        """Downloads an album's images and records each one to a CSV manifest."""
         parts = url.split(r"album/")
         username = url.split("//")[1].split(".")[0]
         album_user = username.replace("-", "_")
@@ -274,85 +357,6 @@ class LiveJournalPhotoScraper:
 
         update_status("[$text-success]Album download complete![/$text-success]")
 
-        return stats
-
-    async def download_images(self, urls: list[str], output_dir=None, relaunch=None) -> dict:
-        """Downloads a list of image URLs, grouped under output_dir/<username>/. 
-        Username is taken from the URL path (e.g. ic.pics.livejournal.com/<user>/...) like save_posts does.
-        Downloads go through a cookie-free context to dodge user-based throttling, falling back to the
-        logged-in context for restricted (412) images. If relaunch is provided (async callable returning
-        a fresh context), the browser is closed and re-opened every 100 images."""
-        if not urls:
-            return {"downloaded": 0, "failed": 0, "total": 0, "dir": None}
-
-        base = Path(output_dir) if output_dir else Path("output_pics")
-        base.mkdir(parents=True, exist_ok=True)
-
-        stats = {"downloaded": 0, "failed": 0, "total": len(urls), "dir": base}
-        page = await self.context.new_page()
-        anon = await self.context.browser.new_context(user_agent=_USER_AGENT, ignore_https_errors=True) if self.context.browser else None
-        delay = float(self.settings.get("delay", 3.0))
-
-        async def save(request_api, img_url, name_via):
-            img_url = to_original_url(img_url)
-            username = username_from_image_url(img_url)
-            out = base / username
-            out.mkdir(parents=True, exist_ok=True)
-            filename = Path(img_url.split("?")[0]).name or f"image_{name_via}.jpg"
-            saved = await self._fetch_and_save_image(request_api, img_url, out / filename)
-            return saved, username, filename
-
-        async def save_or_fail(request_api, img_url, name_via, label=""):
-            saved, username, filename = await save(request_api, img_url, name_via)
-            if saved:
-                stats["downloaded"] += 1
-                print(f"    [$text-success]✓[/$text-success] [dim]Saved{label}:[/dim] {username}/{saved.name}")
-            else:
-                stats["failed"] += 1
-
-        def record_fail(img_url, e=None):
-            stats["failed"] += 1
-            suffix = f": {e}" if e else ""
-            print(f"[bold $text-error]Failed to download {img_url}{suffix}[/bold $text-error]")
-
-        try:
-            request_api = anon or page
-            anonymous = anon is not None
-            for index, img_url in enumerate(urls, start=1):
-                if delay:
-                    await asyncio.sleep(random.uniform(0.5, 1.5) * delay)
-                update_status(f"Downloading image {index}/{len(urls)}...")
-                if relaunch and index > 1 and (index - 1) % 100 == 0:
-                    update_status("Re-opening browser...")
-                    await page.close()
-                    await self.context.close()
-                    self.context = await relaunch()
-                    page = await self.context.new_page()
-                    if anonymous:
-                        anon = await self.context.browser.new_context(user_agent=_USER_AGENT, ignore_https_errors=True)
-                        request_api = anon or page
-                    else:
-                        request_api = page
-                try:
-                    await save_or_fail(request_api, img_url, index)
-                except AuthenticationError:
-                    if anonymous:
-                        anonymous = False
-                        request_api = page
-                        try:
-                            await save_or_fail(page, img_url, index, " (restricted)")
-                        except Exception as e:
-                            record_fail(img_url, e)
-                    else:
-                        record_fail(img_url)
-                except Exception as e:
-                    record_fail(img_url, e)
-        finally:
-            await page.close()
-            if anon:
-                await anon.close()
-
-        update_status(f"[$text-success]Downloaded {stats['downloaded']}/{stats['total']} images.[/$text-success]")
         return stats
 
     async def _fetch_and_save_image(self, page: Page, img_url: str, save_path: Path) -> bool:
