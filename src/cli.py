@@ -80,7 +80,9 @@ async def main_async():
     parser.add_argument("--instant-start", choices=["extras", "posts", "images"],
                         help="Immediately start scraping the specified tab (extras, posts, or images) without waiting for user input.")
     parser.add_argument("--tab", choices=["extras", "posts", "images"], default=None,
-                        help="Select which tab to scrape (extras, posts, or images).")
+                        help="Select which tab to focus (extras, posts, or images).")
+    parser.add_argument("--extras", action="store_true", default=None,
+                        help="Focus the Extras tab on startup.")
     parser.add_argument("--posts", action="store_true", default=None,
                         help="Focus the Posts tab on startup.")
     parser.add_argument("--images", action="store_true", default=None,
@@ -97,6 +99,8 @@ async def main_async():
     # Sync parsed args back into config.settings
     settings.update({k: v for k, v in vars(args).items() if v is not None})
 
+    if settings.get("extras") or settings.get("instant_start") == "extras":
+        settings["tab"] = "extras"
     if settings.get("posts") or settings.get("instant_start") == "posts":
         settings["tab"] = "posts"
     if settings.get("images") or settings.get("instant_start") == "images":
