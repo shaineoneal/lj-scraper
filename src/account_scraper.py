@@ -75,7 +75,7 @@ class LiveJournalAccount:
                 update_status(f"Navigating to {url} (Attempt {attempt + 1}/{max_attempts})...")
 
                 page = await self.context.new_page()
-                resp = await page.goto(url, wait_until="load")
+                resp = await page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
 
                 if resp and resp.status != 200:
                     if resp.status == 404:
@@ -168,6 +168,7 @@ class LiveJournalAccount:
 
     async def scrape_entries(self) -> dict:
         async def save(page, res):
+            await page.wait_for_load_state("load")
             title = await page.title()
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             safe_title = safe_title or f"{self.username} - Recent Entries"
@@ -179,7 +180,7 @@ class LiveJournalAccount:
     async def scrape_profile(self) -> dict:
         async def save(page, res):
             filename = f"{self.username} - Profile"
-            
+            await page.wait_for_load_state("load")
             stat_loc = page.locator('.b-profile-stat-memcount > .b-profile-stat-value').first
             if await stat_loc.count() > 0:
                 memory_count = await stat_loc.text_content()
@@ -194,6 +195,7 @@ class LiveJournalAccount:
     async def scrape_tags(self) -> dict:
         async def save(page, res):
             filename = f"{self.username} - Tags"
+            await page.wait_for_load_state("load")
             await self._save_page_assets(page, "tags", filename, res)
 
         return await self._scrape_task("tags", "tags", check_fn=check_for_tags, save_fn=save)
@@ -201,6 +203,7 @@ class LiveJournalAccount:
     async def scrape_userpics(self) -> dict:
         async def save(page, res):
             filename = f"{self.username} - Userpics"
+            await page.wait_for_load_state("load")
             await self._save_page_assets(page, "userpics", filename, res)
 
         return await self._scrape_task("userpics", "userpics", check_fn=check_for_userpics, save_fn=save)
@@ -208,6 +211,7 @@ class LiveJournalAccount:
     async def scrape_vgifts(self) -> dict:
         async def save(page, res):
             filename = f"{self.username} - Virtual Gifts"
+            await page.wait_for_load_state("load")
             await self._save_page_assets(page, "vgifts", filename, res)
 
         return await self._scrape_task("vgifts", "virtual gifts", check_fn=check_for_vgifts, save_fn=save)
@@ -215,6 +219,7 @@ class LiveJournalAccount:
     async def scrape_mem_index(self):
         async def save(page, res):
             filename = f"{self.username} - Memory Index"
+            await page.wait_for_load_state("load")
             await self._save_page_assets(page, "memory_index", filename, res)
 
         update_status("Navigating to Memory Index...")
@@ -245,6 +250,7 @@ class LiveJournalAccount:
                 )
                 await self.scrape_mem_index()
 
+            await page.wait_for_load_state("load")
             await scroll_with_keyboard(page, self.acct_mem_count if self.acct_mem_count and self.acct_mem_count < max_dl else max_dl)
             await page.wait_for_timeout(5000)
             await self._save_page_assets(page, "memories", filename, res)
@@ -260,6 +266,7 @@ class LiveJournalAccount:
 
         async def save(page, res):
             filename = f"{self.username} - Photo Albums"
+            await page.wait_for_load_state("load")
             await self._save_page_assets(page, "photos", filename, res)
 
             # Extract album links

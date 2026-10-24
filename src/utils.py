@@ -256,7 +256,7 @@ async def scroll_with_keyboard(page: Page, max_memories: int):
 
 async def check_for_tags(page: Page, timeout: int) -> bool:
     try:
-        await page.locator("a[href*='/feed'], a[href*='/profile'], a[href*='/calendar']").first.wait_for(state="visible", timeout=timeout)
+        await page.locator("a[href*='/feed'], a[href*='/profile'], a[href*='/calendar']").first.wait_for(state="attached", timeout=timeout)
         return len(await page.locator('a[href*="/tag"]').all()) != 0
     except (PlaywrightError, TimeoutError):
         return False
@@ -274,24 +274,25 @@ async def check_for_memories(page: Page, timeout: int) -> bool:
         return False
 
 async def check_for_vgifts(page: Page, timeout: int) -> bool:
+    sel = page.locator('.b-vgifts-item-img img')
     try:
-        await page.get_by_text("a virtual gift").wait_for(state="visible", timeout=timeout)
-        return len(await page.locator('.b-vgifts').all()) != 0
+        await sel.first.wait_for(state="visible", timeout=timeout)
+        return len(await sel.all()) != 0
     except (PlaywrightError, TimeoutError):
         return False
 
 async def check_for_userpics(page: Page, timeout: int) -> bool:
-    combined_sel = page.get_by_text("Current Userpics").or_(page.get_by_text("No Pictures"))
+    combined_sel = page.locator('table img').or_(page.locator('h1', has_text="No Pictures"))
 
     try:
-        await expect(combined_sel.first).to_be_visible(timeout=timeout)
-        return len(await page.get_by_text("No Pictures").all()) == 0
+        await combined_sel.first.wait_for(state="visible", timeout=timeout)
+        return len(await combined_sel.all()) > 0
     except (PlaywrightError, TimeoutError):
         return False
 
 async def check_for_albums(page: Page, timeout: int) -> bool:
     try:
-        await page.locator('h1').nth(0).wait_for(state="attached", timeout=timeout)
+        await page.locator('h1').first.wait_for(state="attached", timeout=timeout)
         return len(await page.get_by_text("No Albums").all()) == 0
     except (PlaywrightError, TimeoutError):
         return False
