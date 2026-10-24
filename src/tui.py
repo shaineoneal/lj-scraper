@@ -562,7 +562,7 @@ class LiveJournalScraperApp(App):
             async with async_playwright() as p:
                 context = await launch_browser_with_fallback(
                     p, user_data_dir=user_data_dir, headless=self.query_one("#extras-headless-switch", Switch).value,
-                    args=["--no-sandbox", "--disable-dev-shm-usage"]
+                    args=["--disable-dev-shm-usage"]
                 )
 
                 context.set_default_timeout(self.shared_timeout * 1000)  # Convert seconds to milliseconds
@@ -577,7 +577,7 @@ class LiveJournalScraperApp(App):
                             p,
                             user_data_dir=user_data_dir,
                             headless=self.query_one("#extras-headless-switch", Switch).value,
-                            args=["--no-sandbox", "--disable-dev-shm-usage"],
+                            args=["--disable-dev-shm-usage"],
                         ),
                     )
                     context = photo_scraper.context
@@ -712,7 +712,7 @@ class LiveJournalScraperApp(App):
             async with async_playwright() as p:
                 context = await launch_browser_with_fallback(
                     p, user_data_dir=user_data_dir, headless=True,
-                    args=["--no-sandbox", "--disable-dev-shm-usage"]
+                    args=["--disable-dev-shm-usage"]
                 )
                 context.set_default_timeout(settings["timeout"] * 1000)
                 context.set_default_navigation_timeout(settings["timeout"] * 1000)
@@ -725,7 +725,7 @@ class LiveJournalScraperApp(App):
                             p,
                             user_data_dir=user_data_dir,
                             headless=True,
-                            args=["--no-sandbox", "--disable-dev-shm-usage"],
+                            args=["--disable-dev-shm-usage"],
                         ),
                     )
                 finally:
