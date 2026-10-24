@@ -281,14 +281,16 @@ class LJPost:
                 print(f"    [bold $warning]⚠[/bold $warning] [dim]Failed to extract login info:[/dim] {e}")
 
         body = await self.page.locator("body").inner_html()
+
+        if "This page is not available" in body:
+            raise ValueError(f"Post not found: {self.url}")
+        if "Deleted Post" in body:
+            raise ValueError(f"Post has been deleted: {self.url}")
         comment_count = await self.page.locator('.js-amount').first.text_content() if await self.page.locator(
             '.js-amount').count() > 0 else None
         if "Comments for this post were disabled" in body:
             comment_count = 0
             return
-        if "This page is not available" in body or not comment_count:
-            raise ValueError(f"Post not available: {self.url}")
-
         if index == 1:
             self.page_count = await self.page.locator("li.b-pager-page").count() / 2.0 or 1
 
@@ -436,12 +438,16 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
         try:
             await _process_single_post(page, post_url, output_path, delay)
             results["success_count"] += 1
+        except ValueError:
+            continue
         except Exception as err:
             error_type = err.__class__.__name__
             print(f"Error processing post {post_url}: {error_type}")
+            print(err)
+            results["failure_types"].append(error_type)
             initial_failed.append(post_url)
 
-    # Retry pass for failed posts
+    # Retry pass for failed pofsts
     if initial_failed:
         print("\n[bold $text-warning]=== Retrying Failed Posts ===[/bold $text-warning]\n")
         retry_delay = delay * 1.5 if delay > 0 else 2.0
@@ -452,6 +458,8 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
                 await _process_single_post(page, post_url, output_path, retry_delay)
                 results["success_count"] += 1
                 print(f"    [bold $text-success]✓ Retry successful for {post_url}![/bold $text-success]")
+            except ValueError as ve:
+                print(f"    [bold $text-error]✗ Retry failed for {post_url}: {ve}[/bold $text-error]")
             except Exception as err:
                 error_type = err.__class__.__name__
                 print(f"    [bold $text-error]✗ Retry failed again for {post_url}: {error_type}[/bold $text-error]")

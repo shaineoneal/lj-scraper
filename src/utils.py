@@ -401,10 +401,10 @@ async def get_account_type(page: Page) -> str:
 async def get_logged_in(page) -> str:
     """Checks if the user is logged in."""
     try:
-        if await page.get_by_text("JOIN FREE").is_visible():
+        if await page.get_by_text("JOIN FREE").is_visible(timeout=2000):
             return ""
         else:
-            user = (await page.locator('.s-header-item__link--user').text_content()).strip()
+            user = (await page.locator('.s-header-item__link--user').text_content(timeout=2000)).strip()
             return user if user else ""
     except Exception:
         return ""
