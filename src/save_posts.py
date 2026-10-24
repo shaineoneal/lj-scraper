@@ -366,39 +366,39 @@ async def _process_single_post(page: Page, post_url: str, output_path: Path, del
     post = LJPost(page, post_url)
     jitter = delay * random.uniform(0.5, 1.5)
 
-    await post.load(delay_s=jitter)
-    await post.fetch_post_html()
-    await post.append_comments()
+    try:
+        await post.load(delay_s=jitter)
+        await post.fetch_post_html()
+        await post.append_comments()
 
-    if "page=" in post_url:
-        print(f"    Warning: Post URL contains 'page=' parameter. Only that page will be saved.")
-        page_num = re.search(r"page=(\d+)", post_url)
-        await post.save_to_file(output_path, filename_index=int(page_num.group(1)) if page_num else None)
-        return
+        if "page=" in post_url:
+            print(f"    Warning: Post URL contains 'page=' parameter. Only that page will be saved.")
+            page_num = re.search(r"page=(\d+)", post_url)
+            await post.save_to_file(output_path, filename_index=int(page_num.group(1)) if page_num else None)
+            return
 
-    if post.page_count < 5:
-        if post.page_count > 1:
+        if post.page_count < 5:
+            if post.page_count > 1:
+                for page_num in range(2, int(post.page_count) + 1):
+                    await post.load(delay_s=jitter, index=page_num)
+                    await post.append_comments()
+            await post.save_to_file(output_path)
+        else:
+            await post.save_to_file(output_path, filename_index=1)
             for page_num in range(2, int(post.page_count) + 1):
+                post.comments = []  # Reset comments for each page
                 await post.load(delay_s=jitter, index=page_num)
                 await post.append_comments()
-        await post.save_to_file(output_path)
-    else:
-        await post.save_to_file(output_path, filename_index=1)
-        for page_num in range(2, int(post.page_count) + 1):
-            post.comments = []  # Reset comments for each page
-            await post.load(delay_s=jitter, index=page_num)
-            await post.append_comments()
-            await post.save_to_file(output_path, filename_index=page_num)
+                await post.save_to_file(output_path, filename_index=page_num)
+    except ValueError as ve:
+        print(f"    [bold $text-error]✗ {ve}[/bold $text-error]")
+        raise
+    except Exception as e:
+        print(f"    [bold $text-error]✗ Error processing post {post_url}: {e}[/bold $text-error]")
+        raise
 
 
-async def save_posts(
-    page: Page,
-    posts: list[str],
-    output_dir: Path,
-    delay: float = 0.0,
-    browser_context_factory=None,
-    batch_size: int = 1000
-) -> dict:
+async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: float = 0.0) -> dict:
     """
     Scrapes and archives a list of LiveJournal posts to disk as HTML documents.
     Excel loading is decoupled and handled separately in the caller.
@@ -430,11 +430,6 @@ async def save_posts(
 
     update_status(f"Saving {len(posts)} post(s)")
     for idx, post_url in enumerate(posts, start=1):
-        if browser_context_factory and idx > 1 and (idx - 1) % batch_size == 0:
-            print(f"\n[bold $text-primary]Processed {idx - 1} posts. Restarting browser to free memory...[/bold $text-primary]")
-            update_status("Restarting browser context...")
-            _, page = await browser_context_factory()
-
         update_status(f"Saving post(s)... ({idx}/{len(posts)})")
         print(f"[{idx}/{len(posts)}] Scraping post: {post_url}")
 
@@ -451,10 +446,6 @@ async def save_posts(
         print("\n[bold $text-warning]=== Retrying Failed Posts ===[/bold $text-warning]\n")
         retry_delay = delay * 1.5 if delay > 0 else 2.0
         for idx, post_url in enumerate(initial_failed, start=1):
-            if browser_context_factory and idx > 0 and (idx - 1) % batch_size == 0:
-                update_status("Restarting browser context to free memory...")
-                _, page = await browser_context_factory()
-
             update_status(f"Retrying failed post: {post_url} ({idx}/{len(initial_failed)})")
             print(f"    [bold $text-warning]↻ Retrying post ({idx}/{len(initial_failed)}): {post_url}...[/bold $text-warning]")
             try:
@@ -568,33 +559,22 @@ async def main_async(target=None, settings=None):
 
         active_context = [None]
 
-        async def create_browser_context():
-            if active_context[0]:
-                try:
-                    await active_context[0].close()
-                except Exception:
-                    pass
-                active_context[0] = None
 
-            ctx = await launch_browser_with_fallback(
-                p,
-                user_data_dir=user_data_dir,
-                headless=headless,
-                args=["--disable-dev-shm-usage"]
-            )
-            active_context[0] = ctx
-            pg = ctx.pages[0] if ctx.pages else await ctx.new_page()
-            return ctx, pg
+        ctx = await launch_browser_with_fallback(
+            p,
+            user_data_dir=user_data_dir,
+            headless=headless,
+            args=["--disable-dev-shm-usage"]
+        )
 
-        _, page = await create_browser_context()
         try:
+            page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+
             results = await save_posts(
                 page=page,
                 posts=posts,
                 output_dir=output_dir,
-                delay=delay,
-                browser_context_factory=create_browser_context,
-                batch_size=batch_size
+                delay=delay
             )
             success_count = results['success_count']
             failed_count = len(results['failed_urls'])
@@ -604,11 +584,9 @@ async def main_async(target=None, settings=None):
                 print(f"\n[bold]Updated Excel file '{target}' with post statuses.[/bold]")
             print(f"\n[bold]Saved {success_count} posts. Failed: {failed_count}[/bold]")
         finally:
-            if active_context[0]:
-                try:
-                    await active_context[0].close()
-                except Exception:
-                    pass
+            await ctx.close()
+            update_status("Browser context closed.")
+
 
 
 def main_cli():
