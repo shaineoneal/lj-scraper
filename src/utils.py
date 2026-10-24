@@ -410,6 +410,12 @@ async def get_logged_in(page) -> str:
     except Exception:
         return ""
 
+class DeletedException(Exception):
+    pass
+
+class UnavailableException(Exception):
+    pass
+
 if __name__ == "__main__":
     cases = [
         ("https://ic.pics.livejournal.com/user/123/abc_original.jpg", ([], [], ["https://ic.pics.livejournal.com/user/123/abc_original.jpg"])),

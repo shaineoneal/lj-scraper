@@ -9,7 +9,7 @@ from .config import (
     DEFAULT_USER_DATA_DIR,
     update_status, USERNAME_PATTERN,
 )
-from .utils import get_logged_in
+from .utils import get_logged_in, UnavailableException, DeletedException
 
 # Add the parent directory of this file to the Python path if running as a script
 if __name__ == "__main__" and not __package__:
@@ -283,9 +283,9 @@ class LJPost:
         body = await self.page.locator("body").inner_html()
 
         if "This page is not available" in body:
-            raise ValueError(f"Post not found: {self.url}")
+            raise UnavailableException(f"Post is unavailable!")
         if "Deleted Post" in body:
-            raise ValueError(f"Post has been deleted: {self.url}")
+            raise DeletedException(f"Post has been deleted!")
         comment_count = await self.page.locator('.js-amount').first.text_content() if await self.page.locator(
             '.js-amount').count() > 0 else None
         if "Comments for this post were disabled" in body:
@@ -392,7 +392,7 @@ async def _process_single_post(page: Page, post_url: str, output_path: Path, del
                 await post.load(delay_s=jitter, index=page_num)
                 await post.append_comments()
                 await post.save_to_file(output_path, filename_index=page_num)
-    except ValueError as ve:
+    except (DeletedException, UnavailableException) as ve:
         print(f"    [bold $text-error]✗ {ve}[/bold $text-error]")
         raise
     except Exception as e:
@@ -423,9 +423,7 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
     LJPost.has_checked_login = False
 
     results = {
-        "success_count": 0,
-        "failed_urls": [],
-        "failure_types": [],
+        "status": {},
         "total": len(posts)
     }
 
@@ -435,20 +433,19 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
     for idx, post_url in enumerate(posts, start=1):
         update_status(f"Saving post(s)... ({idx}/{len(posts)})")
         print(f"[{idx}/{len(posts)}] Scraping post: {post_url}")
-
         try:
             await _process_single_post(page, post_url, output_path, delay)
-            results["success_count"] += 1
-        except ValueError:
+            results["status"][post_url] = "Saved"
+        except (DeletedException, UnavailableException) as ve:
+            results["status"][post_url] = ve.__class__.__name__
             continue
         except Exception as err:
             error_type = err.__class__.__name__
             print(f"Error processing post {post_url}: {error_type}")
-            print(err)
-            results["failure_types"].append(error_type)
+            results["status"][post_url] = error_type
             initial_failed.append(post_url)
 
-    # Retry pass for failed pofsts
+    # Retry pass for failed posts
     if initial_failed:
         print("\n[bold $text-warning]=== Retrying Failed Posts ===[/bold $text-warning]\n")
         retry_delay = delay * 1.5 if delay > 0 else 2.0
@@ -457,19 +454,20 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
             print(f"[$text-warning][{idx}/{len(initial_failed)}] Retrying post: {post_url}...[/$text-warning]")
             try:
                 await _process_single_post(page, post_url, output_path, retry_delay)
-                results["success_count"] += 1
                 print(f"    [bold $text-success]✓ Retry successful for {post_url}![/bold $text-success]")
             except ValueError as ve:
                 print(f"    [bold $text-error]✗ Retry failed for {post_url}: {ve}[/bold $text-error]")
             except Exception as err:
                 error_type = err.__class__.__name__
-                print(f"    [bold $text-error]✗ Retry failed again for {post_url}: {error_type}[/bold $text-error]")
-                results["failed_urls"].append(post_url)
-                results["failure_types"].append(error_type)
+                if error_type not in ["DeletedException", "UnavailableException"]:
+                    print(f"    [bold $text-error]✗ Retry failed again for {post_url}: {error_type}[/bold $text-error]")
+                results["status"][post_url] = error_type
 
-    if results["failed_urls"]:
-        print(f"\n[bold $text-error]Failed to save {len(results['failed_urls'])} post(s) after retry:[/bold $text-error]")
-        for url in results["failed_urls"]:
+    failed_urls = [url for url, status in results["status"].items() if
+                    status not in ["Saved", "DeletedException", "UnavailableException"]]
+    if failed_urls:
+        print(f"\n[bold $text-error]Failed to save {len(failed_urls)} post(s) after retry:[/bold $text-error]")
+        for url in failed_urls:
             print(f"  - {url}")
 
     update_status("")
@@ -527,7 +525,7 @@ async def main_async(target=None, settings=None):
 
     posts = []
 
-    output_dir = Path("output_posts")
+    output_dir = Path("save_posts_output")
 
     if target.endswith(".xlsx"):
         try:
@@ -585,12 +583,18 @@ async def main_async(target=None, settings=None):
                 output_dir=output_dir,
                 delay=delay
             )
-            success_count = results['success_count']
-            failed_count = len(results['failed_urls'])
+            success = [url for url, status in results["status"].items() if status == "Saved"]
+            failed_reason = [url for url, status in results["status"].items() if status != "Saved"]
+            success_count = len(success)
+            failed_count = len(failed_reason)
+
             if target.endswith(".xlsx"):
                 output_path = output_dir
-                await inventory.create_posts_tab(output_path, ["Saved" if url not in results['failed_urls'] else f"Failed: {results['failure_types'][i]}" for i, url in enumerate(posts)])
-                print(f"\n[bold]Updated Excel file '{target}' with post statuses.[/bold]")
+
+                await inventory.create_posts_tab(output_path, ["Saved" if url in success else f"Failed: {results['status'][url]}" for url in posts])
+                print(f"\n[bold]Updated Excel file {Path(target)} with post statuses.[/bold]")
+
+
             print(f"\n[bold]Saved {success_count} posts. Failed: {failed_count}[/bold]")
         finally:
             await ctx.close()
