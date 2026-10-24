@@ -25,7 +25,7 @@ import rich.progress
 
 from .save_posts import LJPost, main_async
 from .browser import run_login_flow, launch_browser_with_fallback
-from .account_scraper import LiveJournalAccount
+from .extras_scraper import LiveJournalAccount
 from .photo_scraper import LiveJournalPhotoScraper
 from .utils import parse_targets, setup_file_logging
 
