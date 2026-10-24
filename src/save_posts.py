@@ -247,7 +247,7 @@ class LJPost:
         try:
             await self.page.wait_for_selector('.b-leaf-seemore-more, .b-leaf-collapsed .b-leaf-actions-expand a', timeout=5000)
         except Exception:
-            print("No 'See More' buttons found.")
+            update_status("No 'See More' buttons found.")
             return
         while await more_btn.count() > 0:
             curr_button = more_btn.first
@@ -396,7 +396,8 @@ async def _process_single_post(page: Page, post_url: str, output_path: Path, del
         print(f"    [bold $text-error]✗ {ve}[/bold $text-error]")
         raise
     except Exception as e:
-        print(f"    [bold $text-error]✗ Error processing post {post_url}: {e}[/bold $text-error]")
+        error_type = e.__class__.__name__
+        print(f"    [bold $text-error]✗  Error processing post {post_url}: {error_type}[/bold $text-error]")
         raise
 
 
@@ -453,7 +454,7 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
         retry_delay = delay * 1.5 if delay > 0 else 2.0
         for idx, post_url in enumerate(initial_failed, start=1):
             update_status(f"Retrying failed post: {post_url} ({idx}/{len(initial_failed)})")
-            print(f"    [bold $text-warning]↻ Retrying post ({idx}/{len(initial_failed)}): {post_url}...[/bold $text-warning]")
+            print(f"[$text-warning][{idx}/{len(initial_failed)}] Retrying post: {post_url}...[/$text-warning]")
             try:
                 await _process_single_post(page, post_url, output_path, retry_delay)
                 results["success_count"] += 1
