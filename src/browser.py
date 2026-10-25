@@ -11,6 +11,9 @@ from .config import update_status
 async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, args: list):
     """Tries to launch bundled Chromium, falling back to system Chrome/Chromium on failure."""
     update_status("Launching browser...")
+    # Chromium refuses to start its sandbox as root, which is common in Linux VMs.
+    if os.name != "nt" and os.geteuid() == 0:
+        args = [*args, "--no-sandbox"]
     # 1. Try bundled Chromium first
     try:
         update_status("Launching bundled Chromium...")
