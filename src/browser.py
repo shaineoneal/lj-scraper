@@ -62,19 +62,15 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
     print("\n[bold red]❌ Browser launch failed completely.[/bold red]")
     if os.name != 'nt':
         print(
-            "[bold yellow]If you are on Linux, you are likely missing required system libraries (e.g., libgbm, libatk, libasound).\n"
-            "To fix this, choose the option for your Linux distribution:\n\n"
-            "  1. If you are on Ubuntu/Debian (apt-get):\n"
-            "     Run this executable with the --install-deps flag to install them automatically:\n"
-            "     ./lj-scraper --install-deps\n\n"
-            "  2. If you are on Fedora/RHEL/CentOS (dnf):\n"
-            "     Install Chromium using dnf (this automatically handles all OS libraries):\n"
-            "     sudo dnf install -y chromium\n\n"
-            "  3. If you are on Arch Linux (pacman):\n"
-            "     Install Chromium using pacman:\n"
-            "     sudo pacman -S --noconfirm chromium\n[/bold yellow]"
+            "[bold yellow]If you are on Linux, Chromium is missing either its browser binary or required system libraries (e.g., libgbm, libatk, libasound).\n"
+            "To fix this, run:\n\n"
+            "  .venv/bin/python -m playwright install chromium\n"
+            "  sudo .venv/bin/python -m playwright install-deps chromium\n\n"
+            "If install-deps says your distribution is not supported (e.g. Linux Mint), install the\n"
+            "libraries listed at https://playwright.dev/python/docs/intro#system-requirements\n\n"
+            "Google Chrome is not required - the bundled Chromium is enough.[/bold yellow]"
         )
-    raise Exception("Could not launch any browser. Please install Chrome/Chromium or run 'playwright install-deps'.")
+    raise Exception("Could not launch any browser. Install Chromium and its system dependencies (see the instructions above).")
 
 async def run_login_flow(user_data_dir: str):
     """Launches browser to let the user log in and automatically saves/closes upon successful login."""

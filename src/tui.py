@@ -801,9 +801,13 @@ class LiveJournalScraperApp(App):
             stdout, stderr = await proc.communicate()
             if proc.returncode != 0:
                 print(f"[bold red]Failed (exit {proc.returncode}):[/bold red]\n{stderr.decode('utf-8', 'replace')}")
+                print(f"[bold yellow]install-deps needs your sudo password, so run it in a terminal:[/bold yellow]\n"
+                      f"  sudo {sys.executable} -m playwright install-deps chromium\n")
             else:
                 print("[bold $text-success]Dependencies installed successfully![/bold $text-success]\n")
         except Exception as e:
             print(f"[bold red]Error: {e}[/bold red]\n")
+            print(f"[bold yellow]Run this in a terminal instead:[/bold yellow]\n"
+                  f"  sudo {sys.executable} -m playwright install-deps chromium\n")
         finally:
             self.on_scraping_finished()

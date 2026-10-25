@@ -1,6 +1,8 @@
 import argparse
 import asyncio
 import json
+import os
+import subprocess
 import sys
 
 import configargparse
@@ -42,6 +44,18 @@ class JSONConfigFileParser(configargparse.ConfigFileParser):
     def error(self, message):
         raise configargparse.ConfigFileParserException(message)
 
+def install_linux_deps():
+    """Installs Playwright's system libraries; only works where the playwright package is installed."""
+    if os.name == "nt":
+        print("Playwright's system dependencies only need installing on Linux.")
+        return
+    if getattr(sys, "frozen", False):
+        print("The packaged build cannot run Playwright's installer. Install the shared libraries listed at\n"
+              "https://playwright.dev/python/docs/intro#system-requirements with your package manager.")
+        return
+    sys.exit(subprocess.call([sys.executable, "-m", "playwright", "install-deps", "chromium"]))
+
+
 async def main_async():
     parser = configargparse.ArgumentParser(
         description="Scrape and download LiveJournal accounts and photo albums.",
@@ -56,6 +70,8 @@ async def main_async():
     parser.add_argument("--user-data-dir", default=None,
                         help=f"Directory for browser session data (default: read from config or USER_DATA_DIR env var or '{DEFAULT_USER_DATA_DIR}')")
     parser.add_argument("--headless", action="store_true", default=None, help="Run browser in headless mode.")
+    parser.add_argument("--install-deps", action="store_true",
+                        help="Install missing Linux system dependencies for Playwright.")
     parser.add_argument("--log-file", default=None,
                         help="Path to log file (default: scraper.log).")
     parser.add_argument("--delay", type=float, default=3.0,
@@ -93,6 +109,10 @@ async def main_async():
     except configargparse.ConfigFileParserException as e:
         print(f"[bold $text-error]Error parsing arguments: {e}[/bold $text-error]")
         sys.exit(1)
+
+    if args.install_deps:
+        install_linux_deps()
+        return
 
     settings = load_config(args.config)
 
