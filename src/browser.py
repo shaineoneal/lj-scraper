@@ -26,7 +26,7 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
         )
         return context
     except Exception as e:
-        print(f"[$text-warning]Failed to launch bundled Chromium.[/$text-warning]")
+        print(f"[$text-warning]Failed to launch bundled Chromium: {e}[/$text-warning]")
 
     # 2. Try system Google Chrome
     try:
@@ -40,8 +40,8 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         )
         return context
-    except Exception:
-        print(f"[$text-warning]Failed to launch system-installed Google Chrome.[/$text-warning]")
+    except Exception as e:
+        print(f"[$text-warning]Failed to launch system-installed Google Chrome: {e}[/$text-warning]")
 
         # 3. Try system Chromium
         try:
@@ -55,8 +55,8 @@ async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, ar
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             )
             return context
-        except Exception:
-            print(f"[$text-warning]Failed to launch system-installed Chromium.[/$text-warning]")
+        except Exception as e:
+            print(f"[$text-warning]Failed to launch system-installed Chromium: {e}[/$text-warning]")
 
     # 4. If all fail, print troubleshooting options
     print("\n[bold red]❌ Browser launch failed completely.[/bold red]")
