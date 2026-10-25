@@ -9,7 +9,7 @@ from .config import (
     DEFAULT_USER_DATA_DIR,
     update_status, USERNAME_PATTERN,
 )
-from .utils import get_logged_in, UnavailableException, DeletedException
+from .utils import get_logged_in, SuspendedException, DeletedException
 
 # Add the parent directory of this file to the Python path if running as a script
 if __name__ == "__main__" and not __package__:
@@ -282,8 +282,8 @@ class LJPost:
 
         body = await self.page.locator("body").inner_html()
 
-        if "This page is not available" in body:
-            raise UnavailableException(f"Post is unavailable!")
+        if "Suspended Journal" in body:
+            raise SuspendedException(f"Account was suspended!")
         if "Deleted Post" in body:
             raise DeletedException(f"Post has been deleted!")
 
@@ -396,7 +396,7 @@ async def _process_single_post(page: Page, post_url: str, output_path: Path, del
                 await post.load(delay_s=jitter, index=page_num)
                 await post.append_comments()
                 await post.save_to_file(output_path, filename_index=page_num)
-    except (DeletedException, UnavailableException) as ve:
+    except (DeletedException, SuspendedException) as ve:
         print(f"    [bold $text-error]✗ {ve}[/bold $text-error]")
         raise
     except Exception as e:
@@ -440,7 +440,7 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
         try:
             await _process_single_post(page, post_url, output_path, delay)
             results["status"][post_url] = "Saved"
-        except (DeletedException, UnavailableException) as ve:
+        except (DeletedException, SuspendedException) as ve:
             results["status"][post_url] = ve.__class__.__name__
             continue
         except Exception as err:
@@ -463,12 +463,12 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
                 print(f"    [bold $text-error]✗ Retry failed for {post_url}: {ve}[/bold $text-error]")
             except Exception as err:
                 error_type = err.__class__.__name__
-                if error_type not in ["DeletedException", "UnavailableException"]:
+                if error_type not in ["DeletedException", "SuspendedException"]:
                     print(f"    [bold $text-error]✗ Retry failed again for {post_url}: {error_type}[/bold $text-error]")
                 results["status"][post_url] = error_type
 
     failed_urls = [url for url, status in results["status"].items() if
-                    status not in ["Saved", "DeletedException", "UnavailableException"]]
+                    status not in ["Saved", "DeletedException", "SuspendedException"]]
     if failed_urls:
         print(f"\n[bold $text-error]Failed to save {len(failed_urls)} post(s) after retry:[/bold $text-error]")
         for url in failed_urls:
@@ -588,7 +588,7 @@ async def main_async(target=None, settings=None):
                 delay=delay
             )
             success = [url for url, status in results["status"].items() if status == "Saved"]
-            failed = [url for url, status in results["status"].items() if status == "Failed"]
+            failed = [url for url, status in results["status"].items() if status not in ["Saved", "DeletedException", "SuspendedException"]]
             success_count = len(success)
 
             if target.endswith(".xlsx"):

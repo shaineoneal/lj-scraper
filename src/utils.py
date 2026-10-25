@@ -413,7 +413,7 @@ async def get_logged_in(page) -> str:
 class DeletedException(Exception):
     pass
 
-class UnavailableException(Exception):
+class SuspendedException(Exception):
     pass
 
 if __name__ == "__main__":
