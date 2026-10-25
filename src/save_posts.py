@@ -266,7 +266,7 @@ class LJPost:
             update_status(f"Loading post: {self.url} ({index}/{int(self.page_count)})")
         delay = delay_s * 1000
         target_url = f"{self.url}?s2id=46580551" + (f"&page={index}" if index > 1 else "")
-        await self.page.goto(target_url)
+        await self.page.goto(target_url, wait_until="domcontentloaded")
         await self.page.wait_for_timeout(delay * 2)
 
         if not LJPost.has_checked_login:
@@ -286,6 +286,9 @@ class LJPost:
             raise UnavailableException(f"Post is unavailable!")
         if "Deleted Post" in body:
             raise DeletedException(f"Post has been deleted!")
+
+        await self.page.wait_for_load_state("load")
+
         comment_count = await self.page.locator('.js-amount').first.text_content() if await self.page.locator(
             '.js-amount').count() > 0 else None
         if "Comments for this post were disabled" in body:
