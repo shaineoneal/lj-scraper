@@ -11,6 +11,19 @@ from .config import update_status
 async def launch_browser_with_fallback(p, user_data_dir: str, headless: bool, args: list):
     """Tries to launch bundled Chromium, falling back to system Chrome/Chromium on failure."""
     update_status("Launching browser...")
+    # 1. Try bundled Chromium first
+    try:
+        update_status("Launching bundled Chromium...")
+        context = await p.chromium.launch_persistent_context(
+            user_data_dir=user_data_dir,
+            headless=headless,
+            args=args,
+            ignore_https_errors=True,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        )
+        return context
+    except Exception as e:
+        print(f"[$text-warning]Failed to launch bundled Chromium.[/$text-warning]")
 
     # 2. Try system Google Chrome
     try:
