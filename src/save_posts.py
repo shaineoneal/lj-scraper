@@ -357,11 +357,12 @@ class LJPost:
         else:
             filename += ".html"
 
-        print(f"    Saving post to: {output_dir / self.username / filename}")
         save_path = Path(output_dir)/ self.username / filename
         save_path.parent.mkdir(parents=True, exist_ok=True)
         with open(save_path, "w", encoding="utf-8") as f:
             f.write(await self.render_html(self.username))
+
+        print(f"    [$text-success]✔ Saved post to: {output_dir / self.username / filename}[/$text-success]")
 
         return save_path
 
@@ -587,16 +588,15 @@ async def main_async(target=None, settings=None):
                 delay=delay
             )
             success = [url for url, status in results["status"].items() if status == "Saved"]
-            failed_reason = [url for url, status in results["status"].items() if status != "Saved"]
+            failed = [url for url, status in results["status"].items() if status == "Failed"]
             success_count = len(success)
-            failed_count = len(failed_reason)
 
             if target.endswith(".xlsx"):
                 output_path = output_dir
 
                 await inventory.create_posts_tab(output_path, ["Saved" if url in success else f"Failed: {results['status'][url]}" for url in posts])
                 print(f"\n[bold]Updated Excel file {Path(target)} with post statuses.[/bold]")
-
+            failed_count = len(failed)
 
             print(f"\n[bold]Saved {success_count} posts. Failed: {failed_count}[/bold]")
         finally:
