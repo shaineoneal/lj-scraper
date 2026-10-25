@@ -458,6 +458,7 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
             print(f"[$text-warning][{idx}/{len(initial_failed)}] Retrying post: {post_url}...[/$text-warning]")
             try:
                 await _process_single_post(page, post_url, output_path, retry_delay)
+                results["status"][post_url] = "Saved"
                 print(f"    [bold $text-success]✓ Retry successful for {post_url}![/bold $text-success]")
             except ValueError as ve:
                 print(f"    [bold $text-error]✗ Retry failed for {post_url}: {ve}[/bold $text-error]")
