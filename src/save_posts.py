@@ -535,9 +535,6 @@ async def main_async(target=None, settings=None):
         try:
             inventory = LJInventory(target)
             posts = await inventory.get_posts()
-            username = inventory.username
-            dir_name = re.sub('-', '_', username)
-            output_dir = output_dir / dir_name
             print(f"[bold $success]Loaded {len(posts)} posts from Excel file: {target} -> Saving under folder: {output_dir}[/bold $success]")
         except Exception as e:
             print(f"[bold red]Error loading Excel file '{target}': {e}[/bold red]")
