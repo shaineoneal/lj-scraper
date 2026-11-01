@@ -490,8 +490,7 @@ class LJInventory:
         if ws is None:
             raise ValueError("No active worksheet found in the Excel file.")
 
-        self.username = re.search(USERNAME_PATTERN, ws['H'][2].value).group("user").replace('-', '_') if ws['H'][1].value else "unknown"
-
+        self.username = ws.title.removesuffix("-01")
         return [cell.value for cell in ws['H'][1:] if cell.value]
 
     async def create_posts_tab(self, output_path, statuses: list[str]) -> None:
@@ -516,7 +515,7 @@ class LJInventory:
 
         print(f'Saving to {output_path}')
         # Save the workbook
-        self.wb.save(output_path / f"{self.username}-InventorySheet.xlsx")
+        self.wb.save(output_path / self.username / f"{self.username}-InventorySheet.xlsx")
 
 # ==============================================================================
 # CLI RUNNER ENTRY POINT
