@@ -19,6 +19,12 @@ if __name__ == "__main__" and not __package__:
 from openpyxl import load_workbook
 from playwright.async_api import Page, async_playwright
 
+import json
+import os
+import hashlib
+from datetime import datetime, timezone
+from .progress import ProgressTracker, STATUS_SAVED, STATUS_FAILED, STATUS_DELETED, STATUS_SUSPENDED, STATUS_SKIPPED
+
 # ==============================================================================
 # CSS & STYLING CONSTANTS
 # ==============================================================================
@@ -201,6 +207,21 @@ def extract_urls_from_excel(excel_file_path: Path | str) -> list[str]:
 
     return [cell.value for cell in ws['H'][1:] if cell.value]
 
+def extract_status_from_excel(excel_file_path: Path | str) -> dict[str, str]:
+    wb = load_workbook(excel_file_path)
+    ws = wb["Posts-01"] if "Posts-01" in wb.sheetnames else None
+    if ws is None:
+        raise ValueError("No status sheet found in the Excel file.")
+
+    # status is dict with key as post url and value as status
+    statuses = {}
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        url = row[0]  # Column A (index 0)
+        status = row[1]  # Column B (index 1)
+        if url and status:
+            statuses[url] = status
+    return statuses
+
 def parse_url_target(url: str) -> tuple[str, str]:
     """
     Parses a LiveJournal post URL to extract (username, post_filename).
@@ -222,6 +243,15 @@ def parse_url_target(url: str) -> tuple[str, str]:
         filename = filename.replace(".html", "")
     return "single_posts", filename
 
+def excel_status(url: str, results: dict, tracker: ProgressTracker) -> str:
+    status = results["status"].get(url)
+    if status == "Saved" or (status is None and tracker.get_status(url) == "saved"):
+        return "Saved"
+    if status is None:
+        status = tracker.get_status(url)
+        if status == "failed":
+            status = (tracker.data.get("items", {}).get(url) or {}).get("last_error") or "Unknown"
+    return f"Failed: {status or 'Unknown'}"
 
 class LJPost:
     has_checked_login = False
@@ -357,20 +387,21 @@ class LJPost:
         else:
             filename += ".html"
 
-        save_path = Path(output_dir)/ self.username / filename
+        save_path = Path(output_dir) / filename
         save_path.parent.mkdir(parents=True, exist_ok=True)
         with open(save_path, "w", encoding="utf-8") as f:
             f.write(await self.render_html(self.username))
 
-        print(f"    [$text-success]✔ Saved post to: {output_dir / self.username / filename}[/$text-success]")
+        print(f"    [$text-success]✔ Saved post to: {output_dir / filename}[/$text-success]")
 
         return save_path
 
 
-async def _process_single_post(page: Page, post_url: str, output_path: Path, delay: float) -> None:
+async def _process_single_post(page: Page, post_url: str, output_path: Path, delay: float) -> list[Path]:
     """Loads, extracts, renders, and saves a single post."""
     post = LJPost(page, post_url)
     jitter = delay * random.uniform(0.5, 1.5)
+    written: list[Path] = []
 
     try:
         await post.load(delay_s=jitter)
@@ -380,22 +411,21 @@ async def _process_single_post(page: Page, post_url: str, output_path: Path, del
         if "page=" in post_url:
             print(f"    Warning: Post URL contains 'page=' parameter. Only that page will be saved.")
             page_num = re.search(r"page=(\d+)", post_url)
-            await post.save_to_file(output_path, filename_index=int(page_num.group(1)) if page_num else None)
-            return
-
+            written.append(await post.save_to_file(output_path, filename_index=int(page_num.group(1)) if page_num else None))
+            return written
         if post.page_count < 5:
             if post.page_count > 1:
                 for page_num in range(2, int(post.page_count) + 1):
                     await post.load(delay_s=jitter, index=page_num)
                     await post.append_comments()
-            await post.save_to_file(output_path)
+            written.append(await post.save_to_file(output_path))
         else:
-            await post.save_to_file(output_path, filename_index=1)
+            written.append(await post.save_to_file(output_path, filename_index=1))
             for page_num in range(2, int(post.page_count) + 1):
                 post.comments = []  # Reset comments for each page
                 await post.load(delay_s=jitter, index=page_num)
                 await post.append_comments()
-                await post.save_to_file(output_path, filename_index=page_num)
+                written.append(await post.save_to_file(output_path, filename_index=page_num))
     except (DeletedException, SuspendedException) as ve:
         print(f"    [bold $text-error]✗ {ve}[/bold $text-error]")
         raise
@@ -404,8 +434,14 @@ async def _process_single_post(page: Page, post_url: str, output_path: Path, del
         print(f"    [bold $text-error]✗  Error processing post {post_url}: {error_type}[/bold $text-error]")
         raise
 
+    return written
 
-async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: float = 0.0) -> dict:
+
+
+
+
+async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: float = 0.0,
+                     tracker: ProgressTracker | None = None, progress_path: Path | None = None) -> dict:
     """
     Scrapes and archives a list of LiveJournal posts to disk as HTML documents.
     Excel loading is decoupled and handled separately in the caller.
@@ -415,58 +451,123 @@ async def save_posts(page: Page, posts: list[str], output_dir: Path, delay: floa
         posts: List of post URLs to scrape.
         output_dir: Target output directory path.
         delay: Seconds to sleep between page fetches to avoid rate limits.
-        browser_context_factory: Optional async callable returning (new_context, new_page) to restart the browser.
-        batch_size: Number of posts to process before restarting the browser (default: 1000).
+        tracker: Optional progress tracker to update during the scraping process.
+        progress_path: Optional path to save the progress tracking data.
 
     Returns:
         dict: A summary dictionary (success_count, failed_urls, total).
     """
 
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-    LJPost.has_checked_login = False
-
     results = {
         "status": {},
         "total": len(posts)
     }
-
     initial_failed = []
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    LJPost.has_checked_login = False
+
+    todo_set = set(tracker.get_todo()) if tracker else None
+    if not todo_set:
+        # check for inventory file and load it if it exists (file ending with "-InventorySheet.xlsx")
+        inventory_files = list(output_path.glob("*-InventorySheet.xlsx"))
+        if inventory_files:
+            inventory_file = inventory_files[0]
+            print(f"Found inventory file: {inventory_file}. Checking status.")
+
+            statuses = extract_status_from_excel(inventory_file)
+            # if keys in posts are not the same as the keys in statuses, we should warn the user and skip the account
+            # missing_posts = [post for post in posts if post not in statuses]
+            # if missing_posts:
+            #     print(f"Warning: The following posts are missing from the inventory file and will be skipped:")
+            #     for post in missing_posts:
+            #         print(f"  - {post}")
+            #     posts = [post for post in posts if post in statuses]
+        todo_set = set(posts)
 
     update_status(f"Saving {len(posts)} post(s)")
     for idx, post_url in enumerate(posts, start=1):
+        if tracker:
+            if post_url not in todo_set:
+                # Either already saved/deleted/suspended/skipped, or hit max_attempts
+                # Mirror the tracker status into results so Excel/reporting stays consistent
+                results["status"][post_url] = tracker.get_status(post_url) or "Skipped"
+                continue
+        else:
+            # old behavior: process everything
+            pass
+
         update_status(f"Saving post(s)... ({idx}/{len(posts)})")
         print(f"[{idx}/{len(posts)}] Scraping post: {post_url}")
+
+        if tracker:
+            tracker.mark_in_progress(post_url)  # MUST happen before doing work
+
         try:
-            await _process_single_post(page, post_url, output_path, delay)
+            paths = await _process_single_post(page, post_url, output_path, delay)
+            if tracker:
+                tracker.mark_done(post_url, output_files=[str(p) for p in paths])
             results["status"][post_url] = "Saved"
         except (DeletedException, SuspendedException) as ve:
+            if tracker:
+                status = "deleted" if isinstance(ve, DeletedException) else "suspended"
+                tracker.mark_terminal(post_url, status)
             results["status"][post_url] = ve.__class__.__name__
-            continue
+            continue  # never retry these
         except Exception as err:
-            error_type = err.__class__.__name__
-            print(f"Error processing post {post_url}: {error_type}")
-            results["status"][post_url] = error_type
-            initial_failed.append(post_url)
+            if tracker:
+                tracker.mark_failed(post_url, err)
+            results["status"][post_url] = err.__class__.__name__
+            # Don't append to initial_failed blindly if tracker is managing retries
+            if not tracker:
+                initial_failed.append(post_url)
+            # if tracker exists, we'll let get_todo() pick it up on retry pass
 
     # Retry pass for failed posts
-    if initial_failed:
-        print("\n[bold $text-warning]=== Retrying Failed Posts ===[/bold $text-warning]\n")
-        retry_delay = delay * 1.5 if delay > 0 else 2.0
-        for idx, post_url in enumerate(initial_failed, start=1):
-            update_status(f"Retrying failed post: {post_url} ({idx}/{len(initial_failed)})")
-            print(f"[$text-warning][{idx}/{len(initial_failed)}] Retrying post: {post_url}...[/$text-warning]")
-            try:
-                await _process_single_post(page, post_url, output_path, retry_delay)
-                results["status"][post_url] = "Saved"
-                print(f"    [bold $text-success]✓ Retry successful for {post_url}![/bold $text-success]")
-            except ValueError as ve:
-                print(f"    [bold $text-error]✗ Retry failed for {post_url}: {ve}[/bold $text-error]")
-            except Exception as err:
-                error_type = err.__class__.__name__
-                if error_type not in ["DeletedException", "SuspendedException"]:
-                    print(f"    [bold $text-error]✗ Retry failed again for {post_url}: {error_type}[/bold $text-error]")
-                results["status"][post_url] = error_type
+    if tracker or initial_failed:
+        if tracker:
+            # Do a second pass for anything that became todo (failed with retries left)
+            todo_set = set(tracker.get_todo())
+            if todo_set:
+                print("\n[bold $text-warning]=== Retrying Failed Posts ===[/bold $text-warning]\n")
+                retry_delay = delay * 1.5 if delay > 0 else 2.0
+                for idx, post_url in enumerate(posts, start=1):
+                    if post_url not in todo_set:
+                        continue
+                    print(f"[$text-warning][{idx}/{len(posts)}] Retrying post: {post_url}...[/$text-warning]")
+                    tracker.mark_in_progress(post_url)
+                    try:
+                        paths = await _process_single_post(page, post_url, output_path, retry_delay)
+                        tracker.mark_done(post_url, output_files=[str(p) for p in paths])
+                        print(f"    [bold $text-success]✓ Retry successful for {post_url}![/bold $text-success]")
+                        results["status"][post_url] = "Saved"
+                    except (DeletedException, SuspendedException) as ve:
+                        status = "deleted" if isinstance(ve, DeletedException) else "suspended"
+                        tracker.mark_terminal(post_url, status)
+                        results["status"][post_url] = ve.__class__.__name__
+                    except Exception as err:
+                        tracker.mark_failed(post_url, err)
+                        results["status"][post_url] = err.__class__.__name__
+                        print(
+                            f"    [bold $text-error]✗ Retry failed again for {post_url}: {err.__class__.__name__}[/bold $text-error]")
+        else:
+            print("\n[bold $text-warning]=== Retrying Failed Posts ===[/bold $text-warning]\n")
+            retry_delay = delay * 1.5 if delay > 0 else 2.0
+            for idx, post_url in enumerate(initial_failed, start=1):
+                update_status(f"Retrying failed post: {post_url} ({idx}/{len(initial_failed)})")
+                print(f"[$text-warning][{idx}/{len(initial_failed)}] Retrying post: {post_url}...[/$text-warning]")
+                try:
+                    await _process_single_post(page, post_url, output_path, retry_delay)
+                    results["status"][post_url] = "Saved"
+                    print(f"    [bold $text-success]✓ Retry successful for {post_url}![/bold $text-success]")
+                except ValueError as ve:
+                    print(f"    [bold $text-error]✗ Retry failed for {post_url}: {ve}[/bold $text-error]")
+                except Exception as err:
+                    error_type = err.__class__.__name__
+                    if error_type not in ["DeletedException", "SuspendedException"]:
+                        print(f"    [bold $text-error]✗ Retry failed again for {post_url}: {error_type}[/bold $text-error]")
+                    results["status"][post_url] = error_type
 
     failed_urls = [url for url, status in results["status"].items() if
                     status not in ["Saved", "DeletedException", "SuspendedException"]]
@@ -515,7 +616,7 @@ class LJInventory:
 
         print(f'Saving to {output_path}')
         # Save the workbook
-        self.wb.save(output_path / self.username / f"{self.username}-InventorySheet.xlsx")
+        self.wb.save(output_path / f"{self.username}-InventorySheet.xlsx")
 
 # ==============================================================================
 # CLI RUNNER ENTRY POINT
@@ -528,14 +629,17 @@ async def main_async(target=None, settings=None):
     update_status("Initializing...")
 
     posts = []
+    inventory = None
 
     output_dir = Path("output_posts")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     if target.endswith(".xlsx"):
         try:
             inventory = LJInventory(target)
             posts = await inventory.get_posts()
-            print(f"[bold $success]Loaded {len(posts)} posts from Excel file: {target} -> Saving under folder: {output_dir}[/bold $success]")
+            output_dir = Path(output_dir) / (inventory.username if inventory else "single_posts")
+            print(f"[bold $success]Found {len(posts)} posts from Excel file: {target} -> Saving under folder: {output_dir}[/bold $success]")
         except Exception as e:
             print(f"[bold red]Error loading Excel file '{target}': {e}[/bold red]")
     elif target.endswith(".txt"):
@@ -558,15 +662,33 @@ async def main_async(target=None, settings=None):
         print("[bold $text-error]No post URLs found to save.[/bold $text-error]")
         return
 
+    # Setup tracker for resume support
+    input_type = "xlsx" if target.endswith(".xlsx") else "txt" if target.endswith(".txt") else "url" if target.startswith(("http://", "https://")) else "unknown"
+    tracker = ProgressTracker(
+        output_dir=output_dir,
+        name="save_posts",
+        input_type=input_type,
+        input_path=target if input_type in ("xlsx", "txt") else None,
+        input_items=posts,
+        max_attempts=3,
+    )
+    tracker.load_or_create()
+    tracker.reset_stale_in_progress()
+
+    todo = tracker.get_todo()
+    if not todo:
+        print("[bold $success]All posts already completed.[/bold $success]")
+        if inventory and target.endswith(".xlsx"):
+            # Sync Excel from tracker
+            await inventory.create_posts_tab(output_dir, [excel_status(url, {"status": tracker.data.get("items", {}).get(url, {})}, tracker) for url in posts])
+        return
+
     update_status("Launching browser context...")
     async with async_playwright() as p:
         user_data_dir = str(settings.get("user_data_dir", DEFAULT_USER_DATA_DIR))
         headless = bool(settings.get("headless", True))
         delay = float(settings.get("delay", 5.0))
         batch_size = int(settings.get("batch_size", 1000))
-
-        active_context = [None]
-
 
         ctx = await launch_browser_with_fallback(
             p,
@@ -580,25 +702,38 @@ async def main_async(target=None, settings=None):
 
             results = await save_posts(
                 page=page,
-                posts=posts,
+                posts=todo,
                 output_dir=output_dir,
-                delay=delay
+                delay=delay,
+                tracker=tracker
             )
+
             success = [url for url, status in results["status"].items() if status == "Saved"]
             failed = [url for url, status in results["status"].items() if status not in ["Saved", "DeletedException", "SuspendedException"]]
             success_count = len(success)
-
-            if target.endswith(".xlsx"):
-                output_path = output_dir
-
-                await inventory.create_posts_tab(output_path, ["Saved" if url in success else f"Failed: {results['status'][url]}" for url in posts])
-                print(f"\n[bold]Updated Excel file {Path(target)} with post statuses.[/bold]")
             failed_count = len(failed)
 
             print(f"\n[bold]Saved {success_count} posts. Failed: {failed_count}[/bold]")
+
+            if target.endswith(".xlsx") and inventory:
+                output_path = output_dir
+                await inventory.create_posts_tab(output_dir, [excel_status(url, results, tracker) for url in posts])
+                print(f"\n[bold]Updated Excel file {Path(target)} with post statuses.[/bold]")
+
+            if failed_count == 0:
+                print("[bold $text-success]All posts saved successfully! deleting progress tracker...[/bold $text-success]")
+                tracker.delete()
+            else:
+                print("[bold $text-warning]Some posts failed to save. Progress tracker retained for retrying later.[/bold $text-warning]")
+
         finally:
             await ctx.close()
             update_status("Browser context closed.")
+            if inventory and hasattr(inventory.wb, "close"):
+                try:
+                    inventory.wb.close()
+                except Exception:
+                    pass
 
 
 
