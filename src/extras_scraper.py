@@ -71,6 +71,8 @@ class LiveJournalAccount:
         await asyncio.sleep(self.jitter)
 
         for attempt in range(max_attempts):
+            page = None
+            retry = True
             try:
                 update_status(f"Navigating to {url} (Attempt {attempt + 1}/{max_attempts})...")
 
@@ -79,24 +81,24 @@ class LiveJournalAccount:
 
                 if resp and resp.status != 200:
                     if resp.status == 404:
-                        attempt = max_attempts  # Don't retry on 404s
                         if 'photo' in url:
+                            await page.close()
                             return None
+                        retry = False  # 404 on a normal page is final
                     raise Exception(f"HTTP Status {resp.status}", resp.status)
 
                 if not self.has_run_user_info:
                     self.has_run_user_info = True
                     await self.run_once_per_user(page)
                     if self.account_type == "community" and 'photo' in url:
+                        retry = False
                         raise Exception("Community account detected, skipping photo albums.")
                 return page
-
-            except TimeoutError as e:
-                if 'page' in locals() and page:
+            except Exception as e:
+                if page:
                     await page.close()
-                attempt += 1
-                if attempt >= max_attempts:
-                    raise e
+                if not retry or attempt == max_attempts - 1:
+                    raise
         return None
 
     async def _scrape_task(self, task_name: str, label: str, check_fn=None, save_fn=None) -> dict:
