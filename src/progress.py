@@ -21,10 +21,10 @@ TERMINAL_STATUSES = {STATUS_SAVED, STATUS_DELETED, STATUS_SUSPENDED, STATUS_SKIP
 RETRYABLE_STATUSES = {STATUS_FAILED, STATUS_PENDING}
 
 
-def normalize_items(items: list[str]) -> list[str]:
+def normalize_posts(posts: list[str]) -> list[str]:
     """Strip and dedupe, preserving order"""
     out, seen = [], set()
-    for i in items or []:
+    for i in posts or []:
         if not isinstance(i, str):
             continue
         i = i.strip()
@@ -34,9 +34,9 @@ def normalize_items(items: list[str]) -> list[str]:
     return out
 
 
-def items_hash(items: list[str]) -> str:
-    """SHA256 hash of normalized items for identity matching"""
-    normalized = normalize_items(items)
+def posts_hash(posts: list[str]) -> str:
+    """SHA256 hash of normalized posts for identity matching"""
+    normalized = normalize_posts(posts)
     joined = "\n".join(normalized).encode("utf-8")
     return hashlib.sha256(joined).hexdigest()
 
@@ -74,7 +74,7 @@ class ProgressTracker:
                  name: str,  # e.g., "save_posts", "photo_scraper", "extras_scraper"
                  input_type: str = "unknown",  # "xlsx", "txt", "url", "user_list", etc.
                  input_path: str | Path | None = None,
-                 input_items: list[str] | None = None,  # full list of items to track
+                 input_posts: list[str] | None = None,  # full list of posts to track
                  max_attempts: int = 3,
                  stale_minutes: int = 15):
         self.output_dir = Path(output_dir)
@@ -83,11 +83,11 @@ class ProgressTracker:
         self.name = name
         self.input_type = input_type
         self.input_path = str(input_path) if input_path is not None else None
-        self.input_items_raw = list(input_items) if input_items is not None else []
-        self.normalized_items = normalize_items(self.input_items_raw)
+        self.input_posts_raw = list(input_posts) if input_posts is not None else []
+        self.normalized_posts = normalize_posts(self.input_posts_raw)
         self._hash = (
             hashlib.sha256(str(Path(self.input_path).resolve()).encode("utf-8")).hexdigest()
-            if self.input_path else items_hash(self.input_items_raw)
+            if self.input_path else posts_hash(self.input_posts_raw)
         )
         self.max_attempts = max_attempts
         self.stale_minutes = stale_minutes
@@ -99,21 +99,21 @@ class ProgressTracker:
     # Entry management
     def _entry(self, item_key: str) -> dict:
         """Get or create an entry for the given item key"""
-        items = self.data.setdefault("items", {})
-        if item_key not in items:
-            items[item_key] = {
+        posts = self.data.setdefault("posts", {})
+        if item_key not in posts:
+            posts[item_key] = {
                 "status": STATUS_PENDING,
                 "attempts": 0,
                 "output_files": [],
                 "last_error": None,
-                "metadata": {},
+                "pages": {},
                 "updated_at": _now_iso(),
             }
-        return items[item_key]
+        return posts[item_key]
 
     # Loading/saving
     def load_or_create(self) -> None:
-        """Load existing progress or create fresh from input_items"""
+        """Load existing progress or create fresh from input_posts"""
         if self.path.exists():
             try:
                 with open(self.path, "r", encoding="utf-8") as f:
@@ -125,16 +125,16 @@ class ProgressTracker:
                     if input_info.get("hash") == self._hash:
                         self.data = loaded
                         self._loaded = True
-                        # Ensure all items exist in data
-                        items_dict = self.data.setdefault("items", {})
-                        for item in self.normalized_items:
-                            if item not in items_dict:
-                                items_dict[item] = {
+                        # Ensure all posts exist in data
+                        posts_dict = self.data.setdefault("posts", {})
+                        for item in self.normalized_posts:
+                            if item not in posts_dict:
+                                posts_dict[item] = {
                                     "status": STATUS_PENDING,
                                     "attempts": 0,
                                     "output_files": [],
                                     "last_error": None,
-                                    "metadata": {},
+                                    "posts": {},
                                     "updated_at": _now_iso()
                                 }
                         self.save()
@@ -155,17 +155,17 @@ class ProgressTracker:
                     pass
 
         # Create fresh
-        items_dict = {}
+        posts_dict = {}
         now = _now_iso()
-        items = {k: {"status": STATUS_PENDING, "attempts": 0, "output_files": [], "last_error": None, "metadata": {},
-                     "updated_at": now} for k in self.normalized_items}
+        posts = {k: {"status": STATUS_PENDING, "attempts": 0, "output_files": [], "last_error": None, "pages": {},
+                     "updated_at": now} for k in self.normalized_posts}
         self.data = {
             "version": 1,
             "name": self.name,
             "input": {"type": self.input_type, "path": self.input_path, "hash": self._hash},
             "max_attempts": self.max_attempts,
             "updated_at": now,
-            "items": items,
+            "posts": posts,
         }
         self.save()
 
@@ -220,11 +220,11 @@ class ProgressTracker:
 
     # Querying
     def get_todo(self, include_failed_with_retries_left: bool = True) -> list[str]:
-        """Get items that still need processing - retry anything not successfully saved"""
-        items = self.data.get("items", {})
+        """Get posts that still need processing - retry anything not successfully saved"""
+        posts = self.data.get("posts", {})
         todo = []
-        for k in self.normalized_items:
-            e = items.get(k)
+        for k in self.normalized_posts:
+            e = posts.get(k)
             if not e:
                 todo.append(k)
                 continue
@@ -238,8 +238,8 @@ class ProgressTracker:
 
     def is_done(self, item_key: str) -> bool:
         """Check if item is in terminal success state"""
-        items_dict = self.data.get("items", {}) if self.data else {}
-        entry = items_dict.get(item_key)
+        posts_dict = self.data.get("posts", {}) if self.data else {}
+        entry = posts_dict.get(item_key)
         if not entry:
             return False
         status = entry.get("status")
@@ -251,27 +251,27 @@ class ProgressTracker:
         return s in TERMINAL_STATUSES if s else False
 
     def get_status(self, item_key: str) -> str | None:
-        e = (self.data.get("items") or {}).get(item_key)
+        e = (self.data.get("posts") or {}).get(item_key)
         return e.get("status") if e else None
 
     def get_stats(self) -> dict:
         """Return counts by status"""
-        items = self.data.get("items", {})
+        posts = self.data.get("posts", {})
         stats: dict[str, int] = {}
-        for k in self.normalized_items:
-            s = (items.get(k) or {}).get("status", "missing")
+        for k in self.normalized_posts:
+            s = (posts.get(k) or {}).get("status", "missing")
             stats[s] = stats.get(s, 0) + 1
         return stats
 
     # Resume handling
     def reset_stale_in_progress(self) -> int:
-        """Reset in_progress items older than stale_minutes back to pending"""
+        """Reset in_progress posts older than stale_minutes back to pending"""
         if not self.data:
             return 0
-        items = self.data.get("items", {})
+        posts = self.data.get("posts", {})
         now = datetime.now(timezone.utc)
         changed = 0
-        for e in items.values():
+        for e in posts.values():
             if e.get("status") != STATUS_IN_PROGRESS:
                 continue
             ts = _parse_ts(e.get("updated_at"))
