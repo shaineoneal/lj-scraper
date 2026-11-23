@@ -1,3 +1,5 @@
+import asyncio
+import random
 from pathlib import Path
 
 from playwright.async_api import Page
@@ -19,8 +21,10 @@ from .utils import (
 
 settings = load_config()
 
+
 class LiveJournalAccount:
     """Represents a LiveJournal user and manages their specific scraping tasks."""
+    TASKS = ("entries", "profile", "tags", "userpics", "vgifts", "memories", "photos")
     has_checked_login = False
     logged_in_user = None
 
@@ -30,15 +34,12 @@ class LiveJournalAccount:
         self.account_type = None
         self.settings = settings
         self.format_options = settings.get("format_options")
-        import random
-        self.jitter = random.uniform(0.5, 1.5) * settings.get("delay", 3.0) # in seconds
+        self.jitter = random.uniform(0.5, 1.5) * settings.get("delay", 3.0)  # seconds
         self.user_dir = Path(f"output/{username}")
-        self.is_retrying = False
-        self.timeout = settings.get("timeout", 30) if not self.is_retrying else settings.get("timeout", 30) * 2.25
+        self.timeout = settings.get("timeout", 30)
         self.timeout_ms = int(self.timeout * 1000)
         self.status = None
         self.acct_mem_count = None
-
 
         clean_username = username.replace("_", "-")
         self.base_url = f"https://users.livejournal.com/{clean_username}"
@@ -53,21 +54,11 @@ class LiveJournalAccount:
             "photos": f"{self.base_url}{URL_SUFFIX['photos']}"
         }
 
-        self.results = {
-            "username": self.username,
-            "entries": "skipped",
-            "profile": "skipped",
-            "tags": "skipped",
-            "userpics": "skipped",
-            "vgifts": "skipped",
-            "memories": "skipped",
-            "photos": "skipped"
-        }
+        self.results = {"username": self.username, **dict.fromkeys(self.TASKS, "skipped")}
         self.has_run_user_info = False
 
     async def _fetch_page(self, url: str, max_attempts: int = 7) -> Page | None:
         """Navigates to the given URL with retries and returns the active page object."""
-        import asyncio
         await asyncio.sleep(self.jitter)
 
         for attempt in range(max_attempts):
@@ -123,22 +114,20 @@ class LiveJournalAccount:
                 await save_fn(page, result)
             result["success"] = True
         except Exception as e:
-            if task_name != "photos" and self.account_type != "community":
-                print(f"    [bold $error]✗[/bold $error] [dim]Failed:[/dim] {url} - {str(e)}")
+            if task_name != "photos":
+                print(f"    [bold $error]✗[/bold $error] [dim]Failed:[/dim] {url} - {e}")
                 result["error"] = True
         finally:
             if page:
                 await page.close()
         return result
 
-    async def _save_page_assets(self, page, task_name, filename, res) -> None:
+    async def _save_page_assets(self, page, task_name: str, filename, res) -> None:
         """Helper to download both HTML and PDF, compress the PDF, and update results."""
         save_path = self.user_dir / filename
 
-        # Determine what to save for this task
-        task_option = self.format_options.get(task_name)
-        if task_name == "memory_index":
-            task_option = self.format_options.get("memories")  # Use memories option for memory_index
+        # The memory index follows the memories format setting.
+        task_option = self.format_options.get("memories" if task_name == "memory_index" else task_name)
         if task_option is False or task_option is None:
             print(f"    [bold $warning]⚠[/bold $warning] [dim]Skipping saving assets for {task_name} (disabled).[/dim]")
             return
@@ -164,6 +153,7 @@ class LiveJournalAccount:
                     await compress_pdf(f"{save_path}.pdf")
         except Exception as e:
             print(f"    [bold red]✗[/bold red] [dim]Error saving assets for {task_name}:[/dim] {e}")
+            raise
 
         if task_name != "photos":
             print(f"    [bold $success]✓[/bold $success] [dim]Saved assets for:[/dim] {task_name}")
@@ -194,43 +184,31 @@ class LiveJournalAccount:
 
         return await self._scrape_task("profile", "profile", save_fn=save)
 
-    async def scrape_tags(self) -> dict:
+    async def _scrape_asset_page(self, task_name: str, label: str, filename: str, check_fn=None) -> dict:
+        """Fetch one page and save its HTML/PDF assets."""
         async def save(page, res):
-            filename = f"{self.username} - Tags"
             await page.wait_for_load_state("load")
-            await self._save_page_assets(page, "tags", filename, res)
+            await self._save_page_assets(page, task_name, filename, res)
 
-        return await self._scrape_task("tags", "tags", check_fn=check_for_tags, save_fn=save)
+        return await self._scrape_task(task_name, label, check_fn=check_fn, save_fn=save)
+
+    async def scrape_tags(self) -> dict:
+        return await self._scrape_asset_page("tags", "tags", f"{self.username} - Tags", check_for_tags)
 
     async def scrape_userpics(self) -> dict:
-        async def save(page, res):
-            filename = f"{self.username} - Userpics"
-            await page.wait_for_load_state("load")
-            await self._save_page_assets(page, "userpics", filename, res)
-
-        return await self._scrape_task("userpics", "userpics", check_fn=check_for_userpics, save_fn=save)
+        return await self._scrape_asset_page("userpics", "userpics", f"{self.username} - Userpics", check_for_userpics)
 
     async def scrape_vgifts(self) -> dict:
-        async def save(page, res):
-            filename = f"{self.username} - Virtual Gifts"
-            await page.wait_for_load_state("load")
-            await self._save_page_assets(page, "vgifts", filename, res)
-
-        return await self._scrape_task("vgifts", "virtual gifts", check_fn=check_for_vgifts, save_fn=save)
+        return await self._scrape_asset_page("vgifts", "virtual gifts", f"{self.username} - Virtual Gifts", check_for_vgifts)
 
     async def scrape_mem_index(self):
-        async def save(page, res):
-            filename = f"{self.username} - Memory Index"
-            await page.wait_for_load_state("load")
-            await self._save_page_assets(page, "memory_index", filename, res)
-
         update_status("Navigating to Memory Index...")
-        await self._scrape_task("memory_index", "memory index", save_fn=save)
+        await self._scrape_asset_page("memory_index", "memory index", f"{self.username} - Memory Index")
 
     async def scrape_memories(self) -> dict:
-        async def check(page, res) -> bool:
+        async def check(page, timeout) -> bool:
             if self.acct_mem_count == 0 or self.acct_mem_count is None:
-                mems = await check_for_memories(page, timeout=(self.timeout * 1000))
+                mems = await check_for_memories(page, timeout=timeout)
                 if mems:
                     print(
                         f"    [bold $warning]⚠[/bold $warning] [dim]Unknown memory count, a maximum of {settings.get('max_dl_memories', 750)} memories will be collected..."
@@ -253,7 +231,8 @@ class LiveJournalAccount:
                 await self.scrape_mem_index()
 
             await page.wait_for_load_state("load")
-            await scroll_with_keyboard(page, self.acct_mem_count if self.acct_mem_count and self.acct_mem_count < max_dl else max_dl)
+            scroll_count = self.acct_mem_count if self.acct_mem_count and self.acct_mem_count < max_dl else max_dl
+            await scroll_with_keyboard(page, scroll_count)
             await page.wait_for_timeout(5000)
             await self._save_page_assets(page, "memories", filename, res)
 
@@ -329,84 +308,51 @@ class LiveJournalAccount:
                 else:
                     print("    [bold $warning]⚠[/bold $warning] [dim]Not logged in! Some content may be restricted.[/dim]")
             
+            icons = {"personal": "👤", "community": "👥"}
             account_type = await get_account_type(page)
-            if account_type is not None:
-                if account_type == "personal":
-                    self.account_type = "personal"
-                    print(f"\n[bold $text-accent]👤  [{self.settings.get('index')}/{self.settings.get('total')}] Processing personal account:[/bold $text-accent] {self.username}")
-                elif account_type == "community":
-                    self.account_type = "community"
-                    print(f"\n[bold $text-accent]👥  [{self.settings.get('index')}/{self.settings.get('total')}] Processing community account:[/bold $text-accent] {self.username}")
+            if account_type in icons:
+                self.account_type = account_type
+                print(
+                    f"\n[bold $text-accent]{icons[account_type]}  "
+                    f"[{self.settings.get('index')}/{self.settings.get('total')}] Processing {account_type} account:"
+                    f"[/bold $text-accent] {self.username}"
+                )
 
         except Exception as e:
             print(f"    [bold $warning]⚠[/bold $warning] [dim]Failed to extract initial user info:[/dim] {e}")
 
+    def _record_result(self, task_name: str, res: dict) -> None:
+        """Map a task result to the status strings the UI and retry pass expect."""
+        # entries/profile have never reported "skipped"; keep that contract.
+        failed = res.get("error") or task_name in ("entries", "profile")
+        self.results[task_name] = "success" if res["success"] else "failed" if failed else "skipped"
+
     async def process(self):
         """Executes all selected scraping tasks for the account."""
-        output = Path("output")
-        output.mkdir(exist_ok=True)
+        Path("output").mkdir(exist_ok=True)
         self.user_dir.mkdir(exist_ok=True)
 
-        if self.format_options.get("entries"):
-            res = await self.scrape_entries()
-            self.results["entries"] = "success" if res['success'] else "failed"
-
-        if self.format_options.get("profile"):
-            res = await self.scrape_profile()
-            self.results["profile"] = "success" if res['success'] else "failed"
-
-        if self.format_options.get("tags"):
-            res = await self.scrape_tags()
-            self.results["tags"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
-
-        if self.format_options.get("userpics"):
-            res = await self.scrape_userpics()
-            self.results["userpics"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
-
-        if self.format_options.get("vgifts"):
-            res = await self.scrape_vgifts()
-            self.results["vgifts"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
-
-        if self.format_options.get("memories"):
-            res = await self.scrape_memories()
-            self.results["memories"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
-
-        if self.format_options.get("photos"):
-            res = await self.scrape_photos()
-            self.results["photos"] = "success" if res['success'] else "failed" if res['error'] else "skipped"
+        for task_name in self.TASKS:
+            if self.format_options.get(task_name):
+                res = await getattr(self, f"scrape_{task_name}")()
+                self._record_result(task_name, res)
 
     async def retry_failed(self, status=None) -> bool:
         """Retries any tasks that failed during the initial pass."""
         if status:
             self.status = status
         improved = False
-        self.is_retrying = True
 
-        task_map = {
-            "entries": self.scrape_entries,
-            "profile": self.scrape_profile,
-            "tags": self.scrape_tags,
-            "userpics": self.scrape_userpics,
-            "vgifts": self.scrape_vgifts,
-            "memories": self.scrape_memories,
-            "photos": self.scrape_photos
-        }
+        for task_name in self.TASKS:
+            if self.results.get(task_name) != "failed":
+                continue
+            print(f"    [bold $text-warning]↻ Retrying {task_name} for {self.username}...[/bold $text-warning]")
+            res = await getattr(self, f"scrape_{task_name}")()
+            if res["success"]:
+                self.results[task_name] = "success"
+                improved = True
+                print(f"    [bold $text-success]✓ Retry successful for {task_name}![/bold $text-success]")
+            else:
+                print(f"    [bold $text-error]✗ Retry failed again for {task_name}.[/bold $text-error]")
 
-        for task_name, task_method in task_map.items():
-            if self.results.get(task_name) == "failed":
-                print(f"    [bold $text-warning]↻ Retrying {task_name} for {self.username}...[/bold $text-warning]")
-                
-                if task_name == "memories":
-                    res = await self.scrape_memories()
-                else:
-                    res = await task_method()
-
-                if res['success']:
-                    self.results[task_name] = "success"
-                    improved = True
-                    print(f"    [bold $text-success]✓ Retry successful for {task_name}![/bold $text-success]")
-                else:
-                    print(f"    [bold $text-error]✗ Retry failed again for {task_name}.[/bold $text-error]")
-
-        self.is_retrying = False
         return improved
